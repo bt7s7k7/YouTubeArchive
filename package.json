@@ -1,0 +1,24 @@
+{
+    "name": "you-tube-archive",
+    "version": "0.0.0",
+    "private": true,
+    "devDependencies": {
+        "@typescript-eslint/eslint-plugin": "^8.13.0",
+        "@typescript-eslint/parser": "^8.13.0",
+        "eslint": "^8.53.0",
+        "esbuild": "^0.23.0",
+        "@types/node": "^22.0.0",
+        "typescript": "^5.2"
+    },
+    "scripts": {
+        "dev": "ucpem run builder dev",
+        "watch": "ucpem run builder watch",
+        "build": "tsc --noEmit && ucpem run builder build",
+        "lint": "yarn eslint ./",
+        "start": "ucpem run builder run"
+    },
+    "dependencies": {
+        "dotenv": "^16.4.5"
+    },
+    "type": "module"
+}
