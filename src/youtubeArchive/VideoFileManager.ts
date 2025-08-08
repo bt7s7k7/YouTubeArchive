@@ -1,10 +1,11 @@
 import axios from "axios"
-import { cp, mkdir, readdir, readFile } from "node:fs/promises"
-import { extname, join } from "node:path"
-import { unreachable } from "../comTypes/util"
+import { cp, mkdir, readdir, readFile, rm } from "node:fs/promises"
+import { extname, join, relative } from "node:path"
+import { ensureKey, unreachable } from "../comTypes/util"
+import { UserError } from "./UserError"
 import { VideoInfo } from "./VideoInfo"
 
-const _ID_REGEXP = /\[([\w-]+)\](?:\.[a-z]+)+$/
+const _ID_REGEXP = /\[([\w-]+)\](?:\.[a-z0-9]+)+$/
 
 export interface LegacyInfoFile {
     id: string
@@ -24,22 +25,35 @@ export interface LegacyInfoFile {
     timestamp: number
 }
 
+export interface SourceFiles {
+    videoFile: string | null
+    infoFile: string | null
+    captionFiles: string[] | null
+}
+
 export async function indexSourceDirectory(path: string) {
-    const videoFiles = new Map<string, string>()
-    const infoFiles = new Map<string, string>()
+    const files = new Map<string, SourceFiles>()
 
     for (const dirent of await readdir(path, { recursive: true, withFileTypes: true })) {
         if (!dirent.isFile()) continue
         const id = dirent.name.match(_ID_REGEXP)?.[1]
-        const fullPath = join(path, dirent.name)
+        const fullPath = join(dirent.path ?? "", dirent.name)
         if (id == null) continue
 
-        const isInfo = dirent.name.endsWith(".info.json")
+        const file = ensureKey(files, id, () => ({ videoFile: null, infoFile: null, captionFiles: null }))
 
-        void (isInfo ? infoFiles : videoFiles).set(id, fullPath)
+        const isInfo = dirent.name.endsWith(".info.json")
+        const isCaptions = dirent.name.endsWith(".vtt")
+        if (isInfo) {
+            file.infoFile = fullPath
+        } else if (isCaptions) {
+            (file.captionFiles ??= []).push(fullPath)
+        } else {
+            file.videoFile = fullPath
+        }
     }
 
-    return { videoFiles, infoFiles }
+    return files
 }
 
 export async function downloadThumbnail(url: string) {
@@ -80,32 +94,46 @@ export function escapeFilename(name: string) {
         .replace(/"/g, "'")
 }
 
+function _getFilenameForVideo(video: VideoInfo, ext: string) {
+    return escapeFilename(`${video.label} [${video.id}]${ext}`)
+}
+
 export class VideoFileManager {
-    public readonly videos = new Map<string, string>()
-
     public async importVideoFile(video: VideoInfo, file: string) {
-        if (this.videos.has(video.id)) unreachable()
-
-        const resultName = escapeFilename(`${video.label} [${video.id}]${extname(file)}`)
+        const resultName = _getFilenameForVideo(video, extname(file))
         const fullPath = join(this.path, resultName)
 
         await cp(file, fullPath)
 
-        this.videos.set(video.id, fullPath)
-        video.file = resultName
+        video.file = relative(this.path, fullPath)
+    }
+
+    public async importCaptionsFile(video: VideoInfo, captionsFile: string) {
+        const ext = captionsFile.match(/((?:\.[a-z0-9]+)+)$/)?.[1]
+        if (ext == null) {
+            throw new UserError(`Failed to parse extension from captions file "${captionsFile}"`)
+        }
+
+        const fullPath = join(this.path, _getFilenameForVideo(video, ext))
+        await cp(captionsFile, fullPath)
+        void (video.captions ??= []).push(relative(this.path, fullPath))
+    }
+
+    public async wipeVideoFiles(video: VideoInfo) {
+        if (video.file) {
+            await rm(join(this.path, video.file))
+        }
+
+        if (video.captions) {
+            for (const captionFile of video.captions) {
+                await rm(join(this.path, captionFile))
+            }
+        }
     }
 
     public static async load(path: string) {
         await mkdir(path, { recursive: true })
         const instance = new VideoFileManager(path)
-
-        for (const dirent of await readdir(path, { withFileTypes: true })) {
-            if (!dirent.isFile()) continue
-            const id = dirent.name.match(_ID_REGEXP)?.[1]
-            const fullPath = join(path, dirent.name)
-            if (id == null) continue
-            instance.videos.set(id, fullPath)
-        }
 
         return instance
     }

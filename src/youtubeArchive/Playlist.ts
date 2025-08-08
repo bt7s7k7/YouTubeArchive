@@ -1,19 +1,75 @@
-import { readdir, readFile, writeFile } from "node:fs/promises"
+import { readdir, readFile, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
+import { Readwrite } from "../comTypes/types"
+import { autoFilter, ensureKey, unreachable } from "../comTypes/util"
 import { printInfo } from "./print"
 import { useProject } from "./state"
 import { UserError } from "./UserError"
 import { VideoInfo } from "./VideoInfo"
 
+let _nextId = 0
 export class Playlist {
+    public readonly id = _nextId++
+
     constructor(
-        public readonly url: string,
-        public readonly label: string,
-        public readonly videos: VideoInfo[],
+        public url: string,
+        public label: string,
+        public readonly videos: readonly VideoInfo[],
     ) { }
 }
 
 export class PlaylistRegistry {
+    protected _videoCache: Map<string, Set<number>> | null = null
+    protected _getVideoCache() {
+        if (this._videoCache == null) {
+            this._videoCache = new Map()
+
+            for (const playlist of this.playlists) {
+                for (const video of playlist.videos) {
+                    ensureKey(this._videoCache, video.id, () => new Set()).add(playlist.id)
+                }
+            }
+        }
+        return this._videoCache
+    }
+
+    public getPlaylistsContainingVideo(video: VideoInfo) {
+        const playlistIds = this._getVideoCache().get(video.id)
+        if (playlistIds == null) return []
+
+        return autoFilter([...playlistIds].map(v => this.playlists.find(w => w.id == v)))
+    }
+
+    public isVideoOrphan(video: VideoInfo) {
+        const playlistIds = this._getVideoCache().get(video.id)
+        if (playlistIds == null) return true
+        return playlistIds.size == 0
+    }
+
+    public addVideoToPlaylist(video: VideoInfo, playlist: Playlist) {
+        (playlist.videos as Readwrite<typeof playlist.videos>).push(video)
+        ensureKey(this._getVideoCache(), video.id, () => new Set()).add(playlist.id)
+    }
+
+    public insertVideoToPlaylist(video: VideoInfo, playlist: Playlist, index: number) {
+        (playlist.videos as Readwrite<typeof playlist.videos>).splice(index, 0, video)
+        ensureKey(this._getVideoCache(), video.id, () => new Set()).add(playlist.id)
+    }
+
+    public removeVideoFromPlaylist(video: VideoInfo, playlist: Playlist) {
+        const index = playlist.videos.indexOf(video)
+        if (index == -1) return false
+        void (playlist.videos as Readwrite<typeof playlist.videos>).splice(index, 1)
+        this._getVideoCache().get(video.id)?.delete(playlist.id)
+        return true
+    }
+
+    public deletePlaylist(playlist: Playlist) {
+        const index = this.playlists.indexOf(playlist)
+        if (index == -1) unreachable()
+        this.playlists.splice(index, 1)
+    }
+
     public async save() {
         const toDelete = new Set(this.originalFiles)
         for (const playlist of this.playlists) {
@@ -30,6 +86,7 @@ export class PlaylistRegistry {
 
         for (const file of toDelete) {
             printInfo(`Deleting "${file}"...`)
+            await rm(file)
         }
     }
 

@@ -25,6 +25,70 @@ void (async () => {
         return _tmp ??= mkdtempSync(join(tmpdir(), "archive.downloads."))
     }
 
+    async function deleteVideo(video: VideoInfo) {
+        const project = useProject()
+        const videoRegistry = await project.getVideoRegistry()
+        const videoFileManager = await project.getVideoFileManager()
+        const playlistRegistry = await project.getPlaylistRegistry()
+
+        await videoFileManager.wipeVideoFiles(video)
+        for (const playlist of playlistRegistry.getPlaylistsContainingVideo(video)) {
+            playlistRegistry.removeVideoFromPlaylist(video, playlist)
+        }
+        videoRegistry.videos.delete(video.id)
+    }
+
+    async function getPlaylistByIndex(index: number) {
+        const project = useProject()
+        const playlistRegistry = await project.getPlaylistRegistry()
+
+        const playlist = playlistRegistry.playlists.at(index - 1)
+        if (playlist == null) {
+            throw new UserError("Index outside range")
+        }
+
+        return playlist
+    }
+
+    async function getOrphanVideos() {
+        const project = useProject()
+        const videoRegistry = await project.getVideoRegistry()
+        const playlistRegistry = await project.getPlaylistRegistry()
+
+        return [...videoRegistry.videos.values()].filter(v => playlistRegistry.isVideoOrphan(v))
+    }
+
+    async function areYouSure() {
+        if ((await rl.question("Are you sure? [y/n]")) != "y\x1b[0m") {
+            printWarn("Operation aborted")
+            return false
+        }
+
+        return true
+    }
+
+    function downloadVideo(video: VideoInfo, path: string, { useCookies = false, subsOnly = false } = {}) {
+        if (useCookies && subsOnly) unreachable()
+
+        const command = useCookies ? (
+            `yt-dlp --cookies-from-browser chrome "https://www.youtube.com/watch?v=${video.id}"`
+        ) : (
+            subsOnly ? (
+                `yt-dlp --write-subs --sub-langs ".*" --skip-download "https://www.youtube.com/watch?v=${video.id}"`
+            ) : (
+                `yt-dlp --write-subs --sub-langs ".*" "https://www.youtube.com/watch?v=${video.id}"`
+            )
+        )
+
+        return new Promise<boolean>((resolve) => exec(command, { cwd: path }, (error, stdout, stderr) => {
+            if (error) {
+                printError(`Failed to download "${video.label}", ${stderr}`)
+                resolve(false)
+            }
+            resolve(true)
+        }))
+    }
+
     const repl = new Cli("")
         .addOption({
             name: "quit", desc: "Stops the application",
@@ -67,6 +131,11 @@ void (async () => {
                     }
                 }
 
+                const orphans = await getOrphanVideos()
+                if (orphans.length > 0) {
+                    printWarn(`\nDetected ${orphans.length} orphan videos`)
+                }
+
                 let missing = 0
                 for (const video of videoRegistry.videos.values()) {
                     if (video.file == null) missing++
@@ -87,7 +156,7 @@ void (async () => {
             },
             async callback(url, { label }) {
                 if (url.includes("list=")) {
-                    url = url.match(/list=(\w+)/)![1]
+                    url = url.match(/list=([\w-]+)/)![1]
                 }
 
                 const project = useProject()
@@ -106,17 +175,48 @@ void (async () => {
             },
         })
         .addOption({
-            name: "view", desc: "View playlist content",
+            name: "playlist set url", desc: "Changes the url of the selected playlist",
+            params: [
+                ["index", Type.number],
+                ["url", Type.string],
+            ],
+            async callback(index, url) {
+                if (url.includes("list=")) {
+                    url = url.match(/list=([\w-]+)/)![1]
+                }
+
+                const project = useProject()
+                const playlistRegistry = await project.getPlaylistRegistry()
+                const playlist = await getPlaylistByIndex(index)
+
+                playlist.url = url
+                await playlistRegistry.save()
+            },
+        })
+        .addOption({
+            name: "playlist delete", desc: "Deletes a playlist",
+            params: [
+                ["index", Type.number],
+            ],
+            async callback(index, url) {
+                const project = useProject()
+                const playlistRegistry = await project.getPlaylistRegistry()
+                const playlist = await getPlaylistByIndex(index)
+
+                printWarn(`You are about to delete playlist: "${playlist.label}"`)
+                if (!await areYouSure()) return
+
+                playlistRegistry.deletePlaylist(playlist)
+                await playlistRegistry.save()
+            },
+        })
+        .addOption({
+            name: "view", desc: "View orphaned videos",
             params: [
                 ["index", Type.number],
             ],
             async callback(index) {
-                const project = useProject()
-                const playlistRegistry = await project.getPlaylistRegistry()
-                const playlist = playlistRegistry.playlists.at(index - 1)
-                if (playlist == null) {
-                    throw new UserError("Index outside range")
-                }
+                const playlist = await getPlaylistByIndex(index)
 
                 let i = 0
                 for (const video of playlist.videos) {
@@ -128,7 +228,17 @@ void (async () => {
             },
         })
         .addOption({
-            name: "sync", desc: "Synchronises the list of videos in each playlist",
+            name: "orphans", desc: "View playlist content",
+            async callback() {
+                let i = 0
+                for (const video of await getOrphanVideos()) {
+                    i++
+                    print(`${`${i.toString().padStart(3, " ")}. ${video.label}` + (video.file == null ? "\x1b[91m (Missing)\x1b[0m" : "")} \x1b[2mhttps://youtu.be/${video.id}\x1b[0m`)
+                }
+            },
+        })
+        .addOption({
+            name: "fetch", desc: "Fetches the list of videos in each playlist",
             async callback() {
                 const project = useProject()
                 const playlistRegistry = await project.getPlaylistRegistry()
@@ -150,8 +260,8 @@ void (async () => {
                                 thumbnail: null,
                                 label: videoSnippet.title,
                                 publishedAt: videoSnippet.publishedAt,
-                                channel: videoSnippet.channelTitle,
-                                channelId: videoSnippet.channelId,
+                                channel: videoSnippet.videoOwnerChannelTitle,
+                                channelId: videoSnippet.videoOwnerChannelId,
                             })
 
                             videoRegistry.addVideo(video)
@@ -171,9 +281,9 @@ void (async () => {
                         }
 
                         if (index == -1) {
-                            playlist.videos.push(video)
+                            playlistRegistry.addVideoToPlaylist(video, playlist)
                         } else {
-                            playlist.videos.splice(index + 1, 0, video)
+                            playlistRegistry.insertVideoToPlaylist(video, playlist, index + 1)
                         }
                     }
                 }
@@ -198,53 +308,103 @@ void (async () => {
 
                     path ??= getTempFolder()
                     print(`Downloading "${video.label}"`)
-                    let failed = false
-                    await new Promise<void>((resolve) => exec(`yt-dlp --cookies-from-browser chrome "https://www.youtube.com/watch?v=${video.id}"`, { cwd: path! }, (error, stdout, stderr) => {
-                        if (error) {
-                            failed = true
-                            printError(`Failed to download "${video.label}", ${stderr}`)
-                        }
-                        resolve()
-                    }))
+                    let success = await downloadVideo(video, path!)
+                    if (!success) {
+                        success = await downloadVideo(video, path!, { useCookies: true })
+                    }
 
-                    if (failed) continue
+                    if (!success) continue
 
-                    const { videoFiles } = await indexSourceDirectory(path)
-                    const videoFile = videoFiles.get(video.id)
+                    const files = (await indexSourceDirectory(path)).get(video.id)
+                    const videoFile = files?.videoFile
                     if (videoFile == null) {
                         printError(`Cannot find video file for "${video.id}"`)
                         continue
                     }
 
                     await videoFileManager.importVideoFile(video, videoFile)
+
+                    if (files!.captionFiles != null) {
+                        for (const captionFile of files!.captionFiles) {
+                            await videoFileManager.importCaptionsFile(video, captionFile)
+                        }
+                    }
                 }
 
                 await videoRegistry.save()
                 if (path != null) {
                     await rm(path, { force: true, recursive: true })
+                    _tmp = null
                 }
-
             },
         })
         .addOption({
-            name: "legacy import", desc: "Imports video files from a legacy archive",
+            name: "pull captions", desc: "Downloads missing video captions",
+            async callback() {
+                const project = useProject()
+                const videoRegistry = await project.getVideoRegistry()
+                const videoFileManager = await project.getVideoFileManager()
+
+                let path: string | null = null
+
+                for (const video of videoRegistry.videos.values()) {
+                    if (video.captions != null) continue
+
+                    path ??= getTempFolder()
+                    print(`Downloading "${video.label}"`)
+                    let success = await downloadVideo(video, path!, { subsOnly: true })
+
+                    if (!success) continue
+
+                    const files = (await indexSourceDirectory(path)).get(video.id)
+                    const captionFiles = files?.captionFiles
+                    if (captionFiles == null) {
+                        printError(`Cannot find caption files for "${video.id}"`)
+                        continue
+                    }
+
+                    for (const captionsFile of captionFiles) {
+                        await videoFileManager.importCaptionsFile(video, captionsFile)
+                    }
+                }
+
+                await videoRegistry.save()
+                if (path != null) {
+                    await rm(path, { force: true, recursive: true })
+                    _tmp = null
+                }
+            },
+        })
+        .addOption({
+            name: "legacy pull", desc: "Pulls video files from a legacy archive",
             params: [
                 ["path", Type.string],
             ],
             async callback(path) {
-                const { videoFiles } = await indexSourceDirectory(path)
+                const files = await indexSourceDirectory(path)
                 const project = useProject()
                 const videoRegistry = await project.getVideoRegistry()
                 const videoFileManager = await project.getVideoFileManager()
 
                 for (const video of videoRegistry.videos.values()) {
-                    if (video.file != null) continue
-                    const videoFile = videoFiles.get(video.id)
-                    if (videoFile != null) {
-                        print(`Importing video "${video.label}"`)
-                        await videoFileManager.importVideoFile(video, videoFile)
-                    } else {
-                        printError(`Cannot find video "${video.label}"`)
+                    if (video.file == null) {
+                        const videoFile = files.get(video.id)?.videoFile
+                        if (videoFile != null) {
+                            print(`Importing video "${video.label}"`)
+                            await videoFileManager.importVideoFile(video, videoFile)
+                        } else {
+                            printError(`Cannot find video "${video.label}"`)
+                        }
+                    }
+
+                    if (video.captions == null) {
+                        const captionFiles = files.get(video.id)?.captionFiles
+                        if (captionFiles != null) {
+                            print(`Importing captions "${video.label}"`)
+                            for (const captionFile of captionFiles) {
+                                await videoFileManager.importCaptionsFile(video, captionFile)
+                            }
+                        }
                     }
                 }
 
@@ -258,7 +418,7 @@ void (async () => {
                 ["path", Type.string],
             ],
             async callback(index, path) {
-                const { videoFiles, infoFiles } = await indexSourceDirectory(path)
+                const files = await indexSourceDirectory(path)
                 const project = useProject()
                 const videoRegistry = await project.getVideoRegistry()
                 const videoFileManager = await project.getVideoFileManager()
@@ -269,12 +429,16 @@ void (async () => {
                     throw new UserError("Index outside range")
                 }
 
-                for (const [id, videoFile] of videoFiles) {
-                    const infoFile = infoFiles.get(id)
+                for (const [id, { videoFile, captionFiles, infoFile }] of files) {
                     let video = videoRegistry.videos.get(id)
                     if (video == null) {
                         if (infoFile == null) {
-                            printError(`Skipped importing "${videoFile}" because it has nof info file`)
+                            printError(`Skipped importing "${infoFile}" because it has no info file`)
+                            continue
+                        }
+
+                        if (videoFile == null) {
+                            printError(`Skipped importing "${videoFile}" because it has no video file`)
                             continue
                         }
 
@@ -285,7 +449,7 @@ void (async () => {
                     }
 
                     if (!playlist.videos.includes(video)) {
-                        playlist.videos.push(video)
+                        playlistRegistry.addVideoToPlaylist(video, playlist)
                     }
                 }
 
@@ -296,10 +460,7 @@ void (async () => {
         .addOption({
             name: "wipe videos", desc: "Deletes all video files",
             async callback() {
-                if ((await rl.question("Are you sure? [y/n]")) != "y\x1b[0m") {
-                    printWarn("Operation aborted")
-                    return
-                }
+                if (!await areYouSure()) return
 
                 const project = useProject()
                 const videoRegistry = await project.getVideoRegistry()
@@ -308,9 +469,54 @@ void (async () => {
                 await rm(videoFileManager.path, { recursive: true, force: true })
                 for (const video of videoRegistry.videos.values()) {
                     video.file = null
+                    video.captions = null
                 }
 
                 await videoRegistry.save()
+            },
+        })
+        .addOption({
+            name: "video delete", desc: "Deletes a video",
+            params: [
+                ["id", Type.string],
+            ],
+            async callback(id) {
+                if (!await areYouSure()) return
+
+                const project = useProject()
+                const videoRegistry = await project.getVideoRegistry()
+                const playlistRegistry = await project.getPlaylistRegistry()
+
+                const video = videoRegistry.videos.get(id)
+                if (video == null) {
+                    throw new UserError("Cannot find selected video")
+                }
+
+                await deleteVideo(video)
+
+                await videoRegistry.save()
+                await playlistRegistry.save()
+            },
+        })
+        .addOption({
+            name: "orphans delete", desc: "Deletes all orphan videos",
+            async callback() {
+                printWarn("You are about to delete:")
+                await executeCommand("orphans")
+
+                if (!await areYouSure()) return
+
+                const project = useProject()
+                const videoRegistry = await project.getVideoRegistry()
+                const playlistRegistry = await project.getPlaylistRegistry()
+
+                for (const orphan of await getOrphanVideos()) {
+                    print(`Deleting "${orphan.label}"`)
+                    await deleteVideo(orphan)
+                }
+
+                await videoRegistry.save()
+                await playlistRegistry.save()
             },
         })
 

@@ -39,6 +39,8 @@ export interface Snippet {
     playlistId: string
     position: number
     resourceId: ResourceId
+    videoOwnerChannelId: string
+    videoOwnerChannelTitle: string
 }
 
 /**
