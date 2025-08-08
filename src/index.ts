@@ -664,7 +664,7 @@ void (async () => {
     }
 
     await executeCommand("reload")
-    startServer()
+    const server = startServer()
 
     rl.resume()
     rl.prompt()
@@ -674,8 +674,12 @@ void (async () => {
         input = input.replace("\x1b[0m", "")
         await executeCommand(input)
 
-        if (closed) return
+        if (closed) break
         rl.prompt()
+    }
+
+    if (server != null) {
+        server.close()
     }
 })().catch(err => {
     if (err instanceof UserError) {

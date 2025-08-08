@@ -38,7 +38,7 @@ export class PlaylistDisplay extends Struct.define("PlaylistDisplay", {
 export function startServer() {
     const project = useProject()
     const configText = Optional.pcall(() => readFileSync(join(project.path, "server.json"), "utf-8")).tryUnwrap()
-    if (configText == null) return
+    if (configText == null) return null
 
     const config = Type.object({
         port: Type.number.as(Type.optional, () => 8080),
@@ -121,7 +121,7 @@ export function startServer() {
         root: join(project.path, "videos"),
     }))
 
-    serve({
+    return serve({
         fetch: app.fetch,
         port: config.port,
     }, (info) => {
