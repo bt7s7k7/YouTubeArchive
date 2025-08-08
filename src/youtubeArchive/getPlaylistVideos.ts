@@ -85,7 +85,7 @@ export async function getPlaylistVideos(playlist: string, playlistId: string, ap
     let index = 1
     let nextPageToken: string | null | undefined = null
     do {
-        printInfo(`[${playlist}] Downloading first ${index * 50} videos...`)
+        printInfo(`[${playlist}] Downloading first ${index++ * 50} videos...`)
         const url: string = `${_API_BASE_URL}/playlistItems?part=snippet&playlistId=${playlistId}&maxResults=50&key=${apiKey}${nextPageToken != null ? `&pageToken=${nextPageToken}` : ""}`
         const response = await axios.get<PlaylistItemsResponse>(url)
 

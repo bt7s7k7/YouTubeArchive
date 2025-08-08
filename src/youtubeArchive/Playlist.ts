@@ -72,6 +72,8 @@ export class PlaylistRegistry {
 
     public async save() {
         const toDelete = new Set(this.originalFiles)
+        this.originalFiles.length = 0
+
         for (const playlist of this.playlists) {
             const content = [
                 `url = ${playlist.url}`,
@@ -81,6 +83,7 @@ export class PlaylistRegistry {
 
             const configFile = join(this.path, playlist.label + ".ini")
             toDelete.delete(configFile)
+            this.originalFiles.push(configFile)
             await writeFile(configFile, content.join("\n") + "\n")
         }
 

@@ -6,7 +6,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createInterface } from "node:readline/promises"
 import { Cli } from "./cli/Cli"
-import { unreachable } from "./comTypes/util"
+import { asyncConcurrency, unreachable } from "./comTypes/util"
 import { Type } from "./struct/Type"
 import { getPlaylistVideos } from "./youtubeArchive/getPlaylistVideos"
 import { Playlist } from "./youtubeArchive/Playlist"
@@ -246,47 +246,57 @@ void (async () => {
                 const videoRegistry = await project.getVideoRegistry()
                 const videos = videoRegistry.videos
 
+                const playlistConcurrency = asyncConcurrency(4)
+                const videoConcurrency = asyncConcurrency(10)
+
                 for (const playlist of playlists) {
-                    const videoSnippets = await getPlaylistVideos(playlist.label, playlist.url, project.getToken())
-                    const ids: string[] = []
-                    for (const videoSnippet of videoSnippets) {
-                        const id = videoSnippet.resourceId.videoId
-                        ids.push(id)
-                        let video = videos.get(id)
+                    playlistConcurrency.push(async () => {
+                        const videoSnippets = await getPlaylistVideos(playlist.label, playlist.url, project.getToken())
+                        const ids: string[] = []
+                        for (const videoSnippet of videoSnippets) {
+                            videoConcurrency.push(async () => {
+                                const id = videoSnippet.resourceId.videoId
+                                ids.push(id)
+                                let video = videos.get(id)
 
-                        if (video == null) {
-                            video = new VideoInfo({
-                                id,
-                                thumbnail: null,
-                                label: videoSnippet.title,
-                                publishedAt: videoSnippet.publishedAt,
-                                channel: videoSnippet.videoOwnerChannelTitle,
-                                channelId: videoSnippet.videoOwnerChannelId,
+                                if (video == null) {
+                                    video = new VideoInfo({
+                                        id,
+                                        thumbnail: null,
+                                        label: videoSnippet.title,
+                                        publishedAt: videoSnippet.publishedAt,
+                                        channel: videoSnippet.videoOwnerChannelTitle,
+                                        channelId: videoSnippet.videoOwnerChannelId,
+                                    })
+
+                                    videoRegistry.addVideo(video)
+                                    video.thumbnail = await downloadThumbnail(videoSnippet.thumbnails.standard?.url ?? videoSnippet.thumbnails.high.url)
+                                }
+
+                                if (playlist.videos.includes(video)) return
+
+                                print(`[${playlist.label}] New video: ${video.label}`)
+
+                                let index = -1
+                                for (let i = ids.length - 1; i >= 0; i--) {
+                                    const prevId = ids[i]
+                                    const video = videos.get(prevId) ?? unreachable()
+                                    index = playlist.videos.indexOf(video)
+                                    if (index != -1) break
+                                }
+
+                                if (index == -1) {
+                                    playlistRegistry.addVideoToPlaylist(video, playlist)
+                                } else {
+                                    playlistRegistry.insertVideoToPlaylist(video, playlist, index + 1)
+                                }
                             })
-
-                            videoRegistry.addVideo(video)
-                            video.thumbnail = await downloadThumbnail(videoSnippet.thumbnails.standard?.url ?? videoSnippet.thumbnails.high.url)
                         }
-
-                        if (playlist.videos.includes(video)) continue
-
-                        print(`[${playlist.label}] New video: ${video.label}`)
-
-                        let index = -1
-                        for (let i = ids.length - 1; i >= 0; i--) {
-                            const prevId = ids[i]
-                            const video = videos.get(prevId) ?? unreachable()
-                            index = playlist.videos.indexOf(video)
-                            if (index != -1) break
-                        }
-
-                        if (index == -1) {
-                            playlistRegistry.addVideoToPlaylist(video, playlist)
-                        } else {
-                            playlistRegistry.insertVideoToPlaylist(video, playlist, index + 1)
-                        }
-                    }
+                    })
                 }
+
+                await playlistConcurrency.join()
+                await videoConcurrency.join()
 
                 await videoRegistry.save()
                 await playlistRegistry.save()
@@ -302,34 +312,40 @@ void (async () => {
                 const videoFileManager = await project.getVideoFileManager()
 
                 let path: string | null = null
+                const concurrency = asyncConcurrency(10)
 
                 for (const video of videoRegistry.videos.values()) {
                     if (video.file != null) continue
 
-                    path ??= getTempFolder()
-                    print(`Downloading "${video.label}"`)
-                    let success = await downloadVideo(video, path!)
-                    if (!success) {
-                        success = await downloadVideo(video, path!, { useCookies: true })
-                    }
-
-                    if (!success) continue
-
-                    const files = (await indexSourceDirectory(path)).get(video.id)
-                    const videoFile = files?.videoFile
-                    if (videoFile == null) {
-                        printError(`Cannot find video file for "${video.id}"`)
-                        continue
-                    }
-
-                    await videoFileManager.importVideoFile(video, videoFile)
-
-                    if (files!.captionFiles != null) {
-                        for (const captionFile of files!.captionFiles) {
-                            await videoFileManager.importCaptionsFile(video, captionFile)
+                    concurrency.push(async () => {
+                        path ??= getTempFolder()
+                        print(`Downloading "${video.label}"`)
+                        let success = await downloadVideo(video, path!)
+                        if (!success) {
+                            success = await downloadVideo(video, path!, { useCookies: true })
                         }
-                    }
+
+                        if (!success) return
+
+                        const files = (await indexSourceDirectory(path)).get(video.id)
+                        const videoFile = files?.videoFile
+                        if (videoFile == null) {
+                            printError(`Cannot find video file for "${video.id}"`)
+                            return
+                        }
+
+                        print(`Finished "${video.label}"`)
+                        await videoFileManager.importVideoFile(video, videoFile)
+
+                        if (files!.captionFiles != null) {
+                            for (const captionFile of files!.captionFiles) {
+                                await videoFileManager.importCaptionsFile(video, captionFile)
+                            }
+                        }
+                    })
                 }
+
+                await concurrency.join()
 
                 await videoRegistry.save()
                 if (path != null) {
@@ -346,28 +362,32 @@ void (async () => {
                 const videoFileManager = await project.getVideoFileManager()
 
                 let path: string | null = null
+                const concurrency = asyncConcurrency(10)
 
                 for (const video of videoRegistry.videos.values()) {
-                    if (video.captions != null) continue
+                    if (video.file != null) continue
 
-                    path ??= getTempFolder()
-                    print(`Downloading "${video.label}"`)
-                    let success = await downloadVideo(video, path!, { subsOnly: true })
+                    concurrency.push(async () => {
+                        path ??= getTempFolder()
+                        print(`Downloading "${video.label}"`)
+                        let success = await downloadVideo(video, path!, { subsOnly: true })
 
-                    if (!success) continue
+                        if (!success) return
 
-                    const files = (await indexSourceDirectory(path)).get(video.id)
-                    const captionFiles = files?.captionFiles
-                    if (captionFiles == null) {
-                        printError(`Cannot find caption files for "${video.id}"`)
-                        continue
-                    }
+                        const files = (await indexSourceDirectory(path)).get(video.id)
+                        const captionFiles = files?.captionFiles
+                        if (captionFiles == null) {
+                            printError(`Cannot find caption files for "${video.id}"`)
+                            return
+                        }
 
-                    for (const captionsFile of captionFiles) {
-                        await videoFileManager.importCaptionsFile(video, captionsFile)
-                    }
+                        for (const captionsFile of captionFiles) {
+                            await videoFileManager.importCaptionsFile(video, captionsFile)
+                        }
+                    })
                 }
 
+                await concurrency.join()
                 await videoRegistry.save()
                 if (path != null) {
                     await rm(path, { force: true, recursive: true })
@@ -386,12 +406,16 @@ void (async () => {
                 const videoRegistry = await project.getVideoRegistry()
                 const videoFileManager = await project.getVideoFileManager()
 
+                const concurrency = asyncConcurrency(10)
+
                 for (const video of videoRegistry.videos.values()) {
                     if (video.file == null) {
                         const videoFile = files.get(video.id)?.videoFile
                         if (videoFile != null) {
-                            print(`Importing video "${video.label}"`)
-                            await videoFileManager.importVideoFile(video, videoFile)
+                            concurrency.push(async () => {
+                                print(`Importing video "${video.label}"`)
+                                await videoFileManager.importVideoFile(video, videoFile)
+                            })
                         } else {
                             printError(`Cannot find video "${video.label}"`)
                         }
@@ -400,14 +424,17 @@ void (async () => {
                     if (video.captions == null) {
                         const captionFiles = files.get(video.id)?.captionFiles
                         if (captionFiles != null) {
-                            print(`Importing captions "${video.label}"`)
-                            for (const captionFile of captionFiles) {
-                                await videoFileManager.importCaptionsFile(video, captionFile)
-                            }
+                            concurrency.push(async () => {
+                                print(`Importing captions "${video.label}"`)
+                                for (const captionFile of captionFiles) {
+                                    await videoFileManager.importCaptionsFile(video, captionFile)
+                                }
+                            })
                         }
                     }
                 }
 
+                await concurrency.join()
                 await videoRegistry.save()
             },
         })
@@ -429,29 +456,41 @@ void (async () => {
                     throw new UserError("Index outside range")
                 }
 
+                const concurrency = asyncConcurrency(4)
+
                 for (const [id, { videoFile, captionFiles, infoFile }] of files) {
-                    let video = videoRegistry.videos.get(id)
-                    if (video == null) {
-                        if (infoFile == null) {
-                            printError(`Skipped importing "${infoFile}" because it has no info file`)
-                            continue
+                    concurrency.push(async () => {
+                        let video = videoRegistry.videos.get(id)
+                        if (video == null) {
+                            if (infoFile == null) {
+                                printError(`Skipped importing "${infoFile}" because it has no info file`)
+                                return
+                            }
+
+                            if (videoFile == null) {
+                                printError(`Skipped importing "${videoFile}" because it has no video file`)
+                                return
+                            }
+
+                            print(`Importing video "${videoFile}"`)
+                            video = await parseInfoFile(infoFile)
+                            await videoFileManager.importVideoFile(video, videoFile)
+                            videoRegistry.addVideo(video)
                         }
 
-                        if (videoFile == null) {
-                            printError(`Skipped importing "${videoFile}" because it has no video file`)
-                            continue
+                        if (video.captions == null && captionFiles != null) {
+                            for (const captionFile of captionFiles) {
+                                await videoFileManager.importCaptionsFile(video, captionFile)
+                            }
                         }
 
-                        print(`Importing video "${videoFile}"`)
-                        video = await parseInfoFile(infoFile)
-                        await videoFileManager.importVideoFile(video, videoFile)
-                        videoRegistry.addVideo(video)
-                    }
-
-                    if (!playlist.videos.includes(video)) {
-                        playlistRegistry.addVideoToPlaylist(video, playlist)
-                    }
+                        if (!playlist.videos.includes(video)) {
+                            playlistRegistry.addVideoToPlaylist(video, playlist)
+                        }
+                    })
                 }
+
+                await concurrency.join()
 
                 await videoRegistry.save()
                 await playlistRegistry.save()
