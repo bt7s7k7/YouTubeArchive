@@ -228,10 +228,24 @@ void (async () => {
             },
         })
         .addOption({
-            name: "orphans", desc: "View playlist content",
+            name: "orphans", desc: "List orphaned videos",
             async callback() {
                 let i = 0
                 for (const video of await getOrphanVideos()) {
+                    i++
+                    print(`${`${i.toString().padStart(3, " ")}. ${video.label}` + (video.file == null ? "\x1b[91m (Missing)\x1b[0m" : "")} \x1b[2mhttps://youtu.be/${video.id}\x1b[0m`)
+                }
+            },
+        })
+        .addOption({
+            name: "missing", desc: "List videos without video files",
+            async callback() {
+                const project = useProject()
+                const videoRegistry = await project.getVideoRegistry()
+
+                let i = 0
+                for (const video of videoRegistry.videos.values()) {
+                    if (video.file != null) continue
                     i++
                     print(`${`${i.toString().padStart(3, " ")}. ${video.label}` + (video.file == null ? "\x1b[91m (Missing)\x1b[0m" : "")} \x1b[2mhttps://youtu.be/${video.id}\x1b[0m`)
                 }
