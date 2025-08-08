@@ -254,43 +254,43 @@ void (async () => {
                         const videoSnippets = await getPlaylistVideos(playlist.label, playlist.url, project.getToken())
                         const ids: string[] = []
                         for (const videoSnippet of videoSnippets) {
-                            videoConcurrency.push(async () => {
-                                const id = videoSnippet.resourceId.videoId
-                                ids.push(id)
-                                let video = videos.get(id)
+                            const id = videoSnippet.resourceId.videoId
+                            ids.push(id)
+                            let video = videos.get(id)
 
-                                if (video == null) {
-                                    video = new VideoInfo({
-                                        id,
-                                        thumbnail: null,
-                                        label: videoSnippet.title,
-                                        publishedAt: videoSnippet.publishedAt,
-                                        channel: videoSnippet.videoOwnerChannelTitle,
-                                        channelId: videoSnippet.videoOwnerChannelId,
-                                    })
+                            if (video == null) {
+                                video = new VideoInfo({
+                                    id,
+                                    thumbnail: null,
+                                    label: videoSnippet.title,
+                                    publishedAt: videoSnippet.publishedAt,
+                                    channel: videoSnippet.videoOwnerChannelTitle,
+                                    channelId: videoSnippet.videoOwnerChannelId,
+                                })
 
-                                    videoRegistry.addVideo(video)
-                                    video.thumbnail = await downloadThumbnail(videoSnippet.thumbnails.standard?.url ?? videoSnippet.thumbnails.high.url)
-                                }
+                                videoRegistry.addVideo(video)
+                                videoConcurrency.push(async () => {
+                                    video!.thumbnail = await downloadThumbnail(videoSnippet.thumbnails.standard?.url ?? videoSnippet.thumbnails.high.url)
+                                })
+                            }
 
-                                if (playlist.videos.includes(video)) return
+                            if (playlist.videos.includes(video)) continue
 
-                                print(`[${playlist.label}] New video: ${video.label}`)
+                            print(`[${playlist.label}] New video: ${video.label}`)
 
-                                let index = -1
-                                for (let i = ids.length - 1; i >= 0; i--) {
-                                    const prevId = ids[i]
-                                    const video = videos.get(prevId) ?? unreachable()
-                                    index = playlist.videos.indexOf(video)
-                                    if (index != -1) break
-                                }
+                            let index = -1
+                            for (let i = ids.length - 1; i >= 0; i--) {
+                                const prevId = ids[i]
+                                const video = videos.get(prevId) ?? unreachable()
+                                index = playlist.videos.indexOf(video)
+                                if (index != -1) break
+                            }
 
-                                if (index == -1) {
-                                    playlistRegistry.addVideoToPlaylist(video, playlist)
-                                } else {
-                                    playlistRegistry.insertVideoToPlaylist(video, playlist, index + 1)
-                                }
-                            })
+                            if (index == -1) {
+                                playlistRegistry.addVideoToPlaylist(video, playlist)
+                            } else {
+                                playlistRegistry.insertVideoToPlaylist(video, playlist, index + 1)
+                            }
                         }
                     })
                 }
@@ -457,8 +457,10 @@ void (async () => {
                 }
 
                 const concurrency = asyncConcurrency(4)
+                const ids: string[] = []
 
                 for (const [id, { videoFile, captionFiles, infoFile }] of files) {
+                    ids.push(id)
                     concurrency.push(async () => {
                         let video = videoRegistry.videos.get(id)
                         if (video == null) {
@@ -484,13 +486,19 @@ void (async () => {
                             }
                         }
 
-                        if (!playlist.videos.includes(video)) {
-                            playlistRegistry.addVideoToPlaylist(video, playlist)
-                        }
+
                     })
                 }
 
                 await concurrency.join()
+
+                for (const id of ids) {
+                    const video = videoRegistry.videos.get(id)
+                    if (video == null) unreachable()
+                    if (!playlist.videos.includes(video)) {
+                        playlistRegistry.addVideoToPlaylist(video, playlist)
+                    }
+                }
 
                 await videoRegistry.save()
                 await playlistRegistry.save()
