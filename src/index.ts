@@ -6,6 +6,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createInterface } from "node:readline/promises"
 import { Cli } from "./cli/Cli"
+import { GenericParser } from "./comTypes/GenericParser"
 import { asyncConcurrency, makeRandomID, unreachable } from "./comTypes/util"
 import { startServer } from "./startServer"
 import { Type } from "./struct/Type"
@@ -623,7 +624,32 @@ void (async () => {
     })
 
     async function executeCommand(input: string) {
-        const args = input.split(" ")
+        const args: string[] = []
+        let arg = ""
+        const parser = new GenericParser(input)
+        while (!parser.isDone()) {
+            arg += parser.readUntil((v, i) => v[i] == "\"" || v[i] == "'" || v[i] == " ")
+            if (parser.isDone()) break
+
+            if (parser.consume(" ")) {
+                if (arg.length > 0) args.push(arg)
+                arg = ""
+                continue
+            }
+
+            if (parser.consume("\"")) {
+                arg += parser.readUntil("\"")
+                continue
+            }
+
+            if (parser.consume("'")) {
+                arg += parser.readUntil("'")
+                continue
+            }
+        }
+
+        if (arg.length > 0) args.push(arg)
+
         try {
             await repl.execute(args)
         } catch (err) {
