@@ -298,6 +298,7 @@ void (async () => {
                                 videoRegistry.addVideo(video)
                                 videoConcurrency.push(async () => {
                                     if (videoData.snippet.thumbnails.high == null) {
+                                        // eslint-disable-next-line no-console
                                         console.log(videoData)
                                         throw new UserError(`Invalid data for video "${video!.label}" (${video!.id})`)
                                     }
