@@ -6,7 +6,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createInterface } from "node:readline/promises"
 import { Cli } from "./cli/Cli"
-import { asyncConcurrency, unreachable } from "./comTypes/util"
+import { asyncConcurrency, makeRandomID, unreachable } from "./comTypes/util"
+import { startServer } from "./startServer"
 import { Type } from "./struct/Type"
 import { getPlaylistVideos } from "./youtubeArchive/getPlaylistVideos"
 import { Playlist } from "./youtubeArchive/Playlist"
@@ -19,6 +20,11 @@ import { VideoInfo } from "./youtubeArchive/VideoInfo"
 
 
 void (async () => {
+    const rootPath = process.argv.at(2) ?? process.cwd()
+    if (rootPath != process.cwd()) {
+        printWarn(`Opening archive project at "${rootPath}"`)
+    }
+
     let closed = false
     let _tmp: string | null = null
     function getTempFolder() {
@@ -109,7 +115,7 @@ void (async () => {
                 path: Type.string.as(Type.nullable),
             },
             async callback({ path }) {
-                path ??= process.cwd()
+                path ??= rootPath
                 setActiveProject(new Project(path))
             },
         })
@@ -168,7 +174,7 @@ void (async () => {
                     return
                 }
 
-                playlistRegistry.playlists.push(new Playlist(url, label, []))
+                playlistRegistry.playlists.push(new Playlist(makeRandomID(), url, label, []))
                 await playlistRegistry.save()
 
                 printInfo(`Added playlist "${label}"`)
@@ -267,8 +273,13 @@ void (async () => {
                     playlistConcurrency.push(async () => {
                         const videoSnippets = await getPlaylistVideos(playlist.label, playlist.url, project.getToken())
                         const ids: string[] = []
-                        for (const videoSnippet of videoSnippets) {
-                            const id = videoSnippet.resourceId.videoId
+                        for (const videoData of videoSnippets) {
+                            if (videoData.contentDetails.videoPublishedAt == null) {
+                                printError(`Skipping private video "${videoData.contentDetails.videoId}"`)
+                                continue
+                            }
+
+                            const id = videoData.snippet.resourceId.videoId
                             ids.push(id)
                             let video = videos.get(id)
 
@@ -276,15 +287,20 @@ void (async () => {
                                 video = new VideoInfo({
                                     id,
                                     thumbnail: null,
-                                    label: videoSnippet.title,
-                                    publishedAt: videoSnippet.publishedAt,
-                                    channel: videoSnippet.videoOwnerChannelTitle,
-                                    channelId: videoSnippet.videoOwnerChannelId,
+                                    label: videoData.snippet.title,
+                                    publishedAt: videoData.contentDetails.videoPublishedAt,
+                                    channel: videoData.snippet.videoOwnerChannelTitle,
+                                    channelId: videoData.snippet.videoOwnerChannelId,
+                                    description: videoData.snippet.description,
                                 })
 
                                 videoRegistry.addVideo(video)
                                 videoConcurrency.push(async () => {
-                                    video!.thumbnail = await downloadThumbnail(videoSnippet.thumbnails.standard?.url ?? videoSnippet.thumbnails.high.url)
+                                    if (videoData.snippet.thumbnails.high == null) {
+                                        console.log(videoData)
+                                        throw new UserError(`Invalid data for video "${video!.label}" (${video!.id})`)
+                                    }
+                                    video!.thumbnail = await downloadThumbnail(videoData.snippet.thumbnails.standard?.url ?? videoData.snippet.thumbnails.high.url)
                                 })
                             }
 
@@ -379,7 +395,7 @@ void (async () => {
                 const concurrency = asyncConcurrency(10)
 
                 for (const video of videoRegistry.videos.values()) {
-                    if (video.file != null) continue
+                    if (video.captions != null) continue
 
                     concurrency.push(async () => {
                         path ??= getTempFolder()
@@ -391,8 +407,10 @@ void (async () => {
                         const files = (await indexSourceDirectory(path)).get(video.id)
                         const captionFiles = files?.captionFiles
                         if (captionFiles == null) {
-                            printError(`Cannot find caption files for "${video.id}"`)
+                            printError(`Cannot find caption files for "${video.label}"`)
                             return
+                        } else {
+                            printInfo(`Found caption files for "${video.label}"`)
                         }
 
                         for (const captionsFile of captionFiles) {
@@ -508,7 +526,9 @@ void (async () => {
 
                 for (const id of ids) {
                     const video = videoRegistry.videos.get(id)
-                    if (video == null) unreachable()
+                    if (video == null) {
+                        continue
+                    }
                     if (!playlist.videos.includes(video)) {
                         playlistRegistry.addVideoToPlaylist(video, playlist)
                     }
@@ -580,6 +600,17 @@ void (async () => {
                 await playlistRegistry.save()
             },
         })
+        .addOption({
+            name: "flush", desc: "Rewrite all data files to a normalized form",
+            async callback() {
+                const project = useProject()
+                const videoRegistry = await project.getVideoRegistry()
+                const playlistRegistry = await project.getPlaylistRegistry()
+
+                await videoRegistry.save()
+                await playlistRegistry.save()
+            },
+        })
 
 
     const rl = createInterface({
@@ -605,7 +636,9 @@ void (async () => {
             }
         }
     }
-    executeCommand("reload")
+
+    await executeCommand("reload")
+    startServer()
 
     rl.resume()
     rl.prompt()
@@ -621,6 +654,9 @@ void (async () => {
 })().catch(err => {
     if (err instanceof UserError) {
         printError(err.message)
+        process.exit(1)
+    } else if (err instanceof AxiosError) {
+        printError(err.message + " at " + err.request.host + err.request.path)
         process.exit(1)
     }
 

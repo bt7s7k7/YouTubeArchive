@@ -6,16 +6,53 @@
     <meta http-equiv='X-UA-Compatible' content='IE=edge'>
     <title>YouTube Archive</title>
     <meta name='viewport' content='width=device-width, initial-scale=1'>
+    <style>
+        a {
+            text-decoration: none;
+            color: inherit;
+        }
+    </style>
     <link rel='stylesheet' type='text/css' media='screen' href='quick-front.css'>
     <script src='quick-front.js' type="module"></script>
 </head>
 
-<body>
-    <h1>Hello world</h1>
+<body class="as-dark-theme">
+    <div class="flex column as-page">
+        <h1>YouTube Archive</h1>
+        <div class="flex row gap-2 flex-wrap">
+            <template for="$playlist in [...range(playlists.length)]">
+                <template for="$clickURL in [playlists[$playlist].id != null ? '/videos?playlist=' + playlists[$playlist].id : '/videos']">
+                    <a class="flex column as-button flat as-clickable border rounded p-2 gap-2" href="$clickURL">
+                        <div class="w-300 flex center" style="aspect-ratio: 1.8021265093;">
+                            <template for="$src in [playlists[$playlist].thumbnail]">
+                                <img class="absolute-fill img-cover" src="$src" />
+                            </template>
+
+                            <template for="$size in [playlists[$playlist].size]">
+                                <div class="rounded bg-black-transparent p-2 large">$size</div>
+                            </template>
+                        </div>
+                        <div class="flex column text-left gap-2">
+                            <div class="flex row gap-2">
+                                <template for="$label in [playlists[$playlist].label]">
+                                    <h1 class="m-0">$label</h1>
+                                </template>
+                                <template for="$url in playlists[$playlist].url != null ? [playlists[$playlist].url] : []">
+                                    <a class="muted" href="https://www.youtube.com/playlist?list=$url">[$playlist]</a>
+                                </template>
+                            </div>
+                        </div>
+                    </a>
+                </template>
+            </template>
+        </div>
+    </div>
 
     <script>
         function init() {
-            startApp({})
+            const playlists = $$LIST$$
+
+            startApp({ playlists })
         }
     </script>
 </body>

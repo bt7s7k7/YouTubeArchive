@@ -19,7 +19,8 @@
         "outDir": "dist-types",
         "emitDeclarationOnly": true,
         "skipLibCheck": true,
-        "skipDefaultLibCheck": true
+        "skipDefaultLibCheck": true,
+        "noEmit": true,
     },
     "include": [
         "src/**/*.ts",

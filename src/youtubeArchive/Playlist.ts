@@ -1,17 +1,15 @@
 import { readdir, readFile, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { Readwrite } from "../comTypes/types"
-import { autoFilter, ensureKey, unreachable } from "../comTypes/util"
+import { autoFilter, ensureKey, makeRandomID, unreachable } from "../comTypes/util"
 import { printInfo } from "./print"
 import { useProject } from "./state"
 import { UserError } from "./UserError"
 import { VideoInfo } from "./VideoInfo"
 
-let _nextId = 0
 export class Playlist {
-    public readonly id = _nextId++
-
     constructor(
+        public readonly id: string,
         public url: string,
         public label: string,
         public readonly videos: readonly VideoInfo[],
@@ -19,7 +17,7 @@ export class Playlist {
 }
 
 export class PlaylistRegistry {
-    protected _videoCache: Map<string, Set<number>> | null = null
+    protected _videoCache: Map<string, Set<string>> | null = null
     protected _getVideoCache() {
         if (this._videoCache == null) {
             this._videoCache = new Map()
@@ -67,6 +65,9 @@ export class PlaylistRegistry {
     public deletePlaylist(playlist: Playlist) {
         const index = this.playlists.indexOf(playlist)
         if (index == -1) unreachable()
+        for (const video of playlist.videos) {
+            this.removeVideoFromPlaylist(video, playlist)
+        }
         this.playlists.splice(index, 1)
     }
 
@@ -76,6 +77,7 @@ export class PlaylistRegistry {
 
         for (const playlist of this.playlists) {
             const content = [
+                `id = ${playlist.id}`,
                 `url = ${playlist.url}`,
                 "",
                 ...playlist.videos.map(v => `${v.id} ${v.label}`),
@@ -107,6 +109,7 @@ export class PlaylistRegistry {
                 const content = await readFile(configFile, "utf-8")
 
                 let url: string | null = null
+                let id = makeRandomID()
                 const videos: VideoInfo[] = []
 
                 let i = 0
@@ -115,8 +118,14 @@ export class PlaylistRegistry {
 
                     line = line.trim()
                     if (line == "") continue
+
                     if (line.startsWith("url = ")) {
                         url = line.slice(6)
+                        continue
+                    }
+
+                    if (line.startsWith("id = ")) {
+                        id = line.slice(5)
                         continue
                     }
 
@@ -125,10 +134,10 @@ export class PlaylistRegistry {
                         throw new UserError(`Syntax error at ${configFile}:${i}`)
                     }
 
-                    const id = line.slice(0, space)
-                    const video = videoRegistry.videos.get(id)
+                    const videoId = line.slice(0, space)
+                    const video = videoRegistry.videos.get(videoId)
                     if (video == null) {
-                        throw new UserError(`Reference to missing video "${id}" at ${configFile}:${i}`)
+                        throw new UserError(`Reference to missing video "${videoId}" at ${configFile}:${i}`)
                     }
 
                     orphanVideos.delete(video)
@@ -139,7 +148,7 @@ export class PlaylistRegistry {
                     throw new UserError(`Missing playlist url at ${configFile}`)
                 }
 
-                playlists.push(new Playlist(url, label, videos))
+                playlists.push(new Playlist(id, url, label, videos))
             }
         }
 

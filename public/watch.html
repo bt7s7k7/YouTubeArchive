@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset='utf-8'>
+    <meta http-equiv='X-UA-Compatible' content='IE=edge'>
+    <title>YouTube Archive</title>
+    <meta name='viewport' content='width=device-width, initial-scale=1'>
+    <style>
+        a {
+            text-decoration: none;
+            color: inherit;
+        }
+
+        video {
+            max-height: 70vh;
+        }
+    </style>
+    <link rel='stylesheet' type='text/css' media='screen' href='quick-front.css'>
+    <script src='quick-front.js' type="module"></script>
+</head>
+
+<body class="as-dark-theme">
+    <div class="flex column as-page">
+        <h1>
+            <a href="/">YouTube Archive</a>
+        </h1>
+        <template for="$file in [encodeURIComponent(file)]">
+            <video controls class="w-fill">
+                <source src="$file">
+                <template for="$caption in renderTracks()">
+                    <track kind="captions" $caption />
+                </template>
+            </video>
+        </template>
+        <h1>
+            <template for="$label in [label]">
+                <b>$label</b>
+            </template>
+        </h1>
+        <div>
+            <template for="$channel in [channel]">
+                <template for="$channelId in [channelId]">
+                    <a href="https://www.youtube.com/channel/$channelId">$channel</a>
+                </template>
+            </template>
+            <template for="$id in [id]">
+                <a href="https://www.youtube.com/watch?v=$id" class="muted small">[0]</a>
+            </template>
+        </div>
+        <div>
+            <template for="$publishedAt in [publishedAt]">
+                <template for="$publishedAgo in [publishedAgo]">
+                    <time datetime="$publishedAt" title="$publishedAt">$publishedAgo</time>
+                </template>
+            </template>
+        </div>
+        <template for="$desc in [escapeHTML(description)]">
+            <article class="pre-wrap border rounded p-2 my-4">$desc</article>
+        </template>
+    </div>
+
+    <script>
+        function init() {
+            const video = $$VIDEO$$
+
+            function renderTracks() {
+                return video.captions == null ? [] : video.captions.map(src => {
+                    const language = src.match(/\.(\w+)\.vtt$/)?.[1]
+                    return `srclang="${language}" src="${encodeURIComponent(src)}"${language == "en" ? " default" : ""}`
+                })
+            }
+
+            window.addEventListener("keydown", (event) => {
+                if (event.code == "KeyF") {
+                    const video = document.querySelector("video")
+                    if (document.fullscreenElement) {
+                        document.exitFullscreen()
+                    } else {
+                        video.requestFullscreen()
+                    }
+                }
+            })
+
+            document.title = video.label + " - YouTube Archive"
+
+            startApp({ ...video, renderTracks })
+
+            setTimeout(() => {
+                const video = document.querySelector("video")
+                video.focus()
+                video.addEventListener("loadedmetadata", () => {
+                    video.play()
+                })
+            }, 1)
+        }
+    </script>
+</body>
+
+</html>

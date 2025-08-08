@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset='utf-8'>
+    <meta http-equiv='X-UA-Compatible' content='IE=edge'>
+    <title>YouTube Archive</title>
+    <meta name='viewport' content='width=device-width, initial-scale=1'>
+    <style>
+        a {
+            text-decoration: none;
+            color: inherit;
+        }
+    </style>
+    <link rel='stylesheet' type='text/css' media='screen' href='quick-front.css'>
+    <script src='quick-front.js' type="module"></script>
+</head>
+
+<body class="as-dark-theme">
+    <div class="flex column as-page">
+        <h1>
+            <a href="/">YouTube Archive</a>
+            &nbsp;&gt;&nbsp;
+            <template for="$label in [label]">
+                <b>
+                    $label
+                </b>
+            </template>
+        </h1>
+        <template for="$length in [videos.length]">
+            <div>$length videos</div>
+        </template>
+        <div class="flex column border-top mt-2">
+            <template for="$video in [...range(videos.length)]">
+                <template for="$clickURL in videos[$video].id != null ? ['/watch?v=' + videos[$video].id] : ['']">
+                    <a class="as-button flat as-clickable text-left flex row border-bottom gap-2 p-2" href="$clickURL">
+                        <template for="$thumbnail in [videos[$video].thumbnail]">
+                            <div class="w-200 flex center overflow-hidden" style="aspect-ratio: 1.8021265093;">
+                                <img src="$thumbnail" class="w-fill" />
+                            </div>
+                        </template>
+                        <div class="flex column gap-2">
+                            <template for="$label in [videos[$video].label]">
+                                <div class="flex-wrap">
+                                    <template for="$_ in videos[$video].id == null ? [''] : []">
+                                        <div class="text-danger">(Missing)</div>
+                                    </template>
+                                    <b>
+                                        $label
+                                    </b>
+                                    <template for="$id in [videos[$video].id]">
+                                        <a href="https://www.youtube.com/watch?v=$id" class="muted">[$video]</a>
+                                    </template>
+                                    <template for="$caption in videos[$video].captions">
+                                        <small class="bg-primary-transparent small px-1 rounded">$caption</small>
+                                    </template>
+                                </div>
+                            </template>
+                            <div class="small muted">
+                                <template for="$channel in [videos[$video].channel]">
+                                    <template for="$channelId in [videos[$video].channelId]">
+                                        <a href="https://www.youtube.com/channel/$channelId">$channel</a>
+                                    </template>
+                                </template>
+                            </div>
+                            <div class="small muted">
+                                <template for="$publishedAt in [videos[$video].publishedAt]">
+                                    <template for="$publishedAgo in [videos[$video].publishedAgo]">
+                                        <time datetime="$publishedAt" title="$publishedAt">$publishedAgo</time>
+                                    </template>
+                                </template>
+                            </div>
+                        </div>
+                    </a>
+                </template>
+            </template>
+        </div>
+    </div>
+
+    <script>
+        function init() {
+            const page = $$VIDEOS$$
+
+            document.title = page.label + " - YouTube Archive"
+
+            startApp({ ...page })
+        }
+    </script>
+</body>
+
+</html>

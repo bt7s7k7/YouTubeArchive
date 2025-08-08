@@ -1,9 +1,10 @@
-import axios from "axios"
+import axios, { AxiosError } from "axios"
 import { cp, mkdir, readdir, readFile, rm } from "node:fs/promises"
 import { extname, join, relative } from "node:path"
-import { ensureKey, unreachable } from "../comTypes/util"
+import { ensureKey } from "../comTypes/util"
 import { UserError } from "./UserError"
 import { VideoInfo } from "./VideoInfo"
+import { printError } from "./print"
 
 const _ID_REGEXP = /\[([\w-]+)\](?:\.[a-z0-9]+)+$/
 
@@ -57,26 +58,40 @@ export async function indexSourceDirectory(path: string) {
 }
 
 export async function downloadThumbnail(url: string) {
-    const thumbnail = await axios.get<ArrayBuffer>(url, { responseType: "arraybuffer" })
-    const thumbnailDataUrl = `data:image/jpeg;base64,` + Buffer.from(thumbnail.data).toString("base64")
-    return thumbnailDataUrl
+    try {
+        const thumbnail = await axios.get<ArrayBuffer>(url, { responseType: "arraybuffer" })
+        const thumbnailDataUrl = `data:image/jpeg;base64,` + Buffer.from(thumbnail.data).toString("base64")
+        return thumbnailDataUrl
+    } catch (err) {
+        if (err instanceof AxiosError) {
+            return null
+        } else {
+            throw err
+        }
+    }
 }
 
 export async function parseInfoFile(path: string) {
     const content = await readFile(path, "utf-8")
     const data = JSON.parse(content) as LegacyInfoFile
 
-    const thumbnailInfo = data.thumbnails.find(v => v.resolution == "640x480" && v.url.includes(".jpg")) ?? data.thumbnails.find(v => v.resolution == "480x360" && v.url.includes(".jpg"))
-    if (thumbnailInfo == null) {
-        unreachable()
+    let thumbnail: string | null = null
+    for (const resolution of ["640x480", "480x360"]) {
+        let thumbnailUrl = data.thumbnails.find(v => v.resolution == resolution && v.url.includes(".jpg"))?.url
+        if (thumbnailUrl == null) continue
+        thumbnail = await downloadThumbnail(thumbnailUrl)
+        if (thumbnail != null) break
     }
 
-    const thumbnail = await downloadThumbnail(thumbnailInfo.url)
+    if (thumbnail == null) {
+        printError(`Failed to download thumbnail for "${data.fulltitle}" (${data.id})`)
+    }
 
     return new VideoInfo({
         id: data.id, label: data.fulltitle, thumbnail,
         channel: data.channel, channelId: data.channel_id,
         publishedAt: new Date(data.timestamp * 1000).toISOString(),
+        description: data.description,
     })
 }
 

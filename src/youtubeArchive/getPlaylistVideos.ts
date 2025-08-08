@@ -22,8 +22,13 @@ export interface PlaylistItem {
     etag: string
     id: string
     snippet: Snippet
-    // Other parts like 'contentDetails' or 'status' would be added here
-    // if you requested them in the API call.
+    contentDetails: {
+        videoId: string,
+        startAt: string,
+        endAt: string,
+        note: string,
+        videoPublishedAt: string
+    },
 }
 
 /**
@@ -80,16 +85,16 @@ export interface PageInfo {
 }
 
 export async function getPlaylistVideos(playlist: string, playlistId: string, apiKey: string) {
-    const videos: Snippet[] = []
+    const videos: PlaylistItem[] = []
 
     let index = 1
     let nextPageToken: string | null | undefined = null
     do {
         printInfo(`[${playlist}] Downloading first ${index++ * 50} videos...`)
-        const url: string = `${_API_BASE_URL}/playlistItems?part=snippet&playlistId=${playlistId}&maxResults=50&key=${apiKey}${nextPageToken != null ? `&pageToken=${nextPageToken}` : ""}`
+        const url: string = `${_API_BASE_URL}/playlistItems?part=snippet,contentDetails&playlistId=${playlistId}&maxResults=50&key=${apiKey}${nextPageToken != null ? `&pageToken=${nextPageToken}` : ""}`
         const response = await axios.get<PlaylistItemsResponse>(url)
 
-        videos.push(...response.data.items.map(item => item.snippet))
+        videos.push(...response.data.items)
 
         nextPageToken = response.data.nextPageToken
     } while (nextPageToken != null)
