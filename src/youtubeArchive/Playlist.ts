@@ -131,7 +131,7 @@ export class PlaylistRegistry {
 
                     let space = line.indexOf(" ")
                     if (space == -1) {
-                        throw new UserError(`Syntax error at ${configFile}:${i}`)
+                        space = line.length
                     }
 
                     const videoId = line.slice(0, space)
