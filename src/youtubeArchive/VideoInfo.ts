@@ -3,11 +3,10 @@ import { autoFilter } from "../comTypes/util"
 import { Struct } from "../struct/Struct"
 import { Type } from "../struct/Type"
 
-
 export class VideoInfo extends Struct.define("VideoInfo", {
     id: Type.string,
-    channel: Type.string,
-    channelId: Type.string,
+    channel: Type.string.as(Type.nullable),
+    channelId: Type.string.as(Type.nullable),
     label: Type.string,
     file: Type.string.as(Type.nullable),
     captions: Type.string.as(Type.array).as(Type.nullable),

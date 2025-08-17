@@ -21,8 +21,8 @@ export class VideoDisplay extends Struct.define("VideoDisplay", {
     label: Type.string,
     thumbnail: Type.string,
     captions: Type.string.as(Type.array).as(Type.nullable),
-    channel: Type.string,
-    channelId: Type.string,
+    channel: Type.string.as(Type.nullable),
+    channelId: Type.string.as(Type.nullable),
     publishedAt: Type.string,
     publishedAgo: Type.string,
 }) { }

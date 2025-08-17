@@ -57,10 +57,13 @@
                                 </div>
                             </template>
                             <div class="small muted">
-                                <template for="$channel in [videos[$video].channel]">
-                                    <template for="$channelId in [videos[$video].channelId]">
+                                <template for="$channelId in videos[$video].channelId == null ? [] : [videos[$video].channelId]">
+                                    <template for="$channel in videos[$video].channel == null ? [videos[$video].channelId] : [videos[$video].channel]">
                                         <a href="https://www.youtube.com/channel/$channelId">$channel</a>
                                     </template>
+                                </template>
+                                <template for="$_ in videos[$video].channelId == null ? [''] : []">
+                                    <span class="text-danger">Unknown</span>
                                 </template>
                             </div>
                             <div class="small muted">

@@ -10,14 +10,14 @@ export interface PlaylistItemsResponse {
     kind: string
     etag: string
     nextPageToken?: string // This property is optional, as it won't be present on the last page.
-    items: PlaylistItem[]
+    items: VideoData[]
     pageInfo: PageInfo
 }
 
 /**
  * Represents a single item (video) in the playlist response.
  */
-export interface PlaylistItem {
+export interface VideoData {
     kind: string
     etag: string
     id: string
@@ -84,8 +84,24 @@ export interface PageInfo {
     resultsPerPage: number
 }
 
+/**
+ * Interface for the top-level response from the YouTube Data API v3
+ * for the 'videos.list' endpoint.
+ */
+export interface VideoListResponse {
+    kind: "youtube#videoListResponse"
+    etag: string
+    nextPageToken?: string
+    prevPageToken?: string
+    pageInfo: {
+        totalResults: number
+        resultsPerPage: number
+    }
+    items: VideoData[]
+}
+
 export async function getPlaylistVideos(playlist: string, playlistId: string, apiKey: string) {
-    const videos: PlaylistItem[] = []
+    const videos: VideoData[] = []
 
     let index = 1
     let nextPageToken: string | null | undefined = null
@@ -100,4 +116,12 @@ export async function getPlaylistVideos(playlist: string, playlistId: string, ap
     } while (nextPageToken != null)
 
     return videos
+}
+
+export async function getVideoMetadata(videoId: string, apiKey: string) {
+    const url = `${_API_BASE_URL}/videos?part=snippet&id=${videoId}&key=${apiKey}`
+    const response = await axios.get<VideoListResponse>(url)
+
+    const video = response.data.items[0]
+    return video
 }

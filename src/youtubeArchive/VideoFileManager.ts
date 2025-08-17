@@ -5,6 +5,7 @@ import { ensureKey } from "../comTypes/util"
 import { UserError } from "./UserError"
 import { VideoInfo } from "./VideoInfo"
 import { printError } from "./print"
+import { VideoData } from "./youtubeApi"
 
 const _ID_REGEXP = /\[([\w-]+)\](?:\.[a-z0-9]+)+$/
 
@@ -93,6 +94,30 @@ export async function parseInfoFile(path: string) {
         publishedAt: new Date(data.timestamp * 1000).toISOString(),
         description: data.description,
     })
+}
+
+export function parseYoutubeVideo(videoData: VideoData) {
+    return new VideoInfo({
+        id: videoData.id ?? videoData.snippet.resourceId.videoId,
+        thumbnail: null,
+        label: videoData.snippet.title,
+        description: videoData.snippet.description,
+
+        // The following properties are in different places based on if the video data object is from the playlist or video API request (the first alternative is playlist API)
+        publishedAt: videoData.contentDetails?.videoPublishedAt ?? videoData.snippet.publishedAt,
+        channel: videoData.snippet.videoOwnerChannelTitle ?? videoData.snippet.channelTitle,
+        channelId: videoData.snippet.videoOwnerChannelId ?? videoData.snippet.channelId,
+    })
+}
+
+export async function downloadThumbnailBasedOnYoutubeVideo(video: VideoInfo, videoData: VideoData) {
+    if (videoData.snippet.thumbnails.high == null) {
+        // eslint-disable-next-line no-console
+        console.log(videoData)
+        throw new UserError(`Invalid data for video "${video.label}" (${video.id})`)
+    }
+
+    video.thumbnail = await downloadThumbnail(videoData.snippet.thumbnails.standard?.url ?? videoData.snippet.thumbnails.high.url)
 }
 
 export function escapeFilename(name: string) {

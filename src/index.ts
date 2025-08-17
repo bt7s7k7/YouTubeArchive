@@ -5,20 +5,20 @@ import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createInterface } from "node:readline/promises"
+import { inspect } from "node:util"
 import { Cli } from "./cli/Cli"
 import { GenericParser } from "./comTypes/GenericParser"
 import { asyncConcurrency, makeRandomID, unreachable } from "./comTypes/util"
 import { startServer } from "./startServer"
 import { Type } from "./struct/Type"
-import { getPlaylistVideos } from "./youtubeArchive/getPlaylistVideos"
 import { Playlist } from "./youtubeArchive/Playlist"
 import { print, printError, printInfo, printWarn } from "./youtubeArchive/print"
 import { Project } from "./youtubeArchive/Project"
 import { setActiveProject, useProject } from "./youtubeArchive/state"
 import { UserError } from "./youtubeArchive/UserError"
-import { downloadThumbnail, indexSourceDirectory, parseInfoFile } from "./youtubeArchive/VideoFileManager"
+import { downloadThumbnailBasedOnYoutubeVideo, indexSourceDirectory, parseInfoFile, parseYoutubeVideo } from "./youtubeArchive/VideoFileManager"
 import { VideoInfo } from "./youtubeArchive/VideoInfo"
-
+import { getPlaylistVideos, getVideoMetadata } from "./youtubeArchive/youtubeApi"
 
 void (async () => {
     const rootPath = process.argv.at(2) ?? process.cwd()
@@ -30,6 +30,26 @@ void (async () => {
     let _tmp: string | null = null
     function getTempFolder() {
         return _tmp ??= mkdtempSync(join(tmpdir(), "archive.downloads."))
+    }
+
+    const VIDEO_PROPERTIES = {
+        label: Type.string.as(Type.nullable),
+        description: Type.string.as(Type.nullable),
+        publishedAt: Type.string.as(Type.nullable),
+        channel: Type.string.as(Type.nullable),
+        channelId: Type.string.as(Type.nullable),
+    }
+
+    type VideoProperties = Type.Extract<Type.TypedObjectType<typeof VIDEO_PROPERTIES>>
+
+    function validateVideoProperties(properties: VideoProperties) {
+        if (properties.publishedAt != null) {
+            const date = new Date(properties.publishedAt)
+            if (date.toString() == "Invalid Date") {
+                throw new UserError(`Invalid date "${properties.publishedAt}"`)
+            }
+            properties.publishedAt = date.toISOString()
+        }
     }
 
     async function deleteVideo(video: VideoInfo) {
@@ -117,7 +137,10 @@ void (async () => {
             },
             async callback({ path }) {
                 path ??= rootPath
-                setActiveProject(new Project(path))
+                const project = new Project(path)
+                setActiveProject(project)
+                await project.getVideoRegistry()
+                await project.getPlaylistRegistry()
             },
         })
         .addOption({
@@ -297,12 +320,7 @@ void (async () => {
 
                                 videoRegistry.addVideo(video)
                                 videoConcurrency.push(async () => {
-                                    if (videoData.snippet.thumbnails.high == null) {
-                                        // eslint-disable-next-line no-console
-                                        console.log(videoData)
-                                        throw new UserError(`Invalid data for video "${video!.label}" (${video!.id})`)
-                                    }
-                                    video!.thumbnail = await downloadThumbnail(videoData.snippet.thumbnails.standard?.url ?? videoData.snippet.thumbnails.high.url)
+                                    await downloadThumbnailBasedOnYoutubeVideo(video!, videoData)
                                 })
                             }
 
@@ -582,6 +600,116 @@ void (async () => {
             },
         })
         .addOption({
+            name: "video add", desc: "Adds a new video",
+            params: [
+                ["id", Type.string],
+            ],
+            options: VIDEO_PROPERTIES,
+            async callback(id, properties) {
+                const project = useProject()
+                const videoRegistry = await project.getVideoRegistry()
+
+                if (videoRegistry.videos.has(id)) {
+                    throw new UserError("Video with the specified ID already exists")
+                }
+
+                validateVideoProperties(properties)
+                const video = new VideoInfo({
+                    id,
+                    label: id,
+                    description: "",
+                    publishedAt: new Date().toISOString(),
+                })
+
+                for (const [key, value] of Object.entries(properties)) {
+                    if (value != null) {
+                        (video as any)[key] = value
+                    }
+                }
+
+                videoRegistry.addVideo(video)
+                await videoRegistry.save()
+            },
+        })
+        .addOption({
+            name: "video update", desc: "Allows you to update video metadata",
+            params: [
+                ["id", Type.string],
+            ],
+            options: VIDEO_PROPERTIES,
+            async callback(id, properties) {
+                const project = useProject()
+                const videoRegistry = await project.getVideoRegistry()
+
+                const video = videoRegistry.videos.get(id)
+                if (video == null) {
+                    throw new UserError("Video with the specified ID does not exist")
+                }
+
+                validateVideoProperties(properties)
+
+                for (const [key, value] of Object.entries(properties)) {
+                    if (value != null) {
+                        (video as any)[key] = value
+                    }
+                }
+
+                await videoRegistry.save()
+            },
+        })
+        .addOption({
+            name: "video", desc: "Displays video metadata",
+            params: [
+                ["id", Type.string],
+            ],
+            async callback(id) {
+                const project = useProject()
+                const videoRegistry = await project.getVideoRegistry()
+
+                const video = videoRegistry.videos.get(id)
+                if (video == null) {
+                    throw new UserError("Video with the specified ID does not exist")
+                }
+
+                const { label, description, ...other } = video
+                    ;
+                (other as any).thumbnail = other.thumbnail != null ? { [inspect.custom]() { return "\x1b[93myes\x1b[0m" } } : { [inspect.custom]() { return "\x1b[93mno\x1b[0m" } }
+
+                print(
+                    `\x1b[96mLabel:\x1b[0m ${label}\n` +
+                    `\x1b[96mDescription:\x1b[0m\n\x1b[2m${description}\x1b[0m\n` +
+                    `\x1b[96mMetadata:\x1b[0m ${inspect(other, undefined, undefined, true)}\n`,
+                )
+            },
+        })
+        .addOption({
+            name: "video fetch", desc: "Fetches metadata for a video",
+            params: [
+                ["id", Type.string],
+            ],
+            async callback(id) {
+                const project = useProject()
+                const videoRegistry = await project.getVideoRegistry()
+
+                const video = videoRegistry.videos.get(id)
+                if (video == null) {
+                    throw new UserError("Video with the specified ID does not exist")
+                }
+
+                const videoData = await getVideoMetadata(video.id, project.getToken())
+                const fetchedVideo = parseYoutubeVideo(videoData)
+
+                for (const key of Object.keys(VIDEO_PROPERTIES)) {
+                    // @ts-ignore
+                    video[key] = fetchedVideo[key]
+                }
+
+                await downloadThumbnailBasedOnYoutubeVideo(video, videoData)
+
+                await videoRegistry.save()
+            },
+        })
+        .addOption({
             name: "orphans delete", desc: "Deletes all orphan videos",
             async callback() {
                 printWarn("You are about to delete:")
@@ -615,16 +743,7 @@ void (async () => {
         })
 
 
-    const rl = createInterface({
-        input: process.stdin,
-        output: process.stdout,
-        prompt: "\x1b[33m>\x1b[96m ",
-        completer(line) {
-            return [repl.autocomplete(line), line]
-        },
-    })
-
-    async function executeCommand(input: string) {
+    function parseArgs(input: string) {
         const args: string[] = []
         let arg = ""
         const parser = new GenericParser(input)
@@ -640,16 +759,47 @@ void (async () => {
 
             if (parser.consume("\"")) {
                 arg += parser.readUntil("\"")
+                parser.index++
                 continue
             }
 
             if (parser.consume("'")) {
                 arg += parser.readUntil("'")
+                parser.index++
                 continue
             }
         }
 
         if (arg.length > 0) args.push(arg)
+        return args
+    }
+
+    const rl = createInterface({
+        input: process.stdin,
+        output: process.stdout,
+        prompt: "\x1b[33m>\x1b[96m ",
+        async completer(line) {
+            const result = repl.autocomplete(line)
+
+            const args = parseArgs(line)
+            const match = repl.findCommand(args)
+            if (match && match[1].fullName.startsWith("video")) {
+                const idMatch = line.match(new RegExp(`^${match[1].fullName} ([\\w-]+)$`))
+                if (idMatch) {
+                    const idStart = idMatch[1]
+                    const videoRegistry = await useProject().getVideoRegistry()
+                    const videos = [...videoRegistry.videos.keys()].filter(v => v.startsWith(idStart))
+                    result.push(...videos.map(v => `${match[1].fullName} ${v}`))
+                }
+            }
+
+            return [result, line]
+        },
+    })
+
+    async function executeCommand(input: string) {
+        if (input.trim() == "") return
+        const args = parseArgs(input)
 
         try {
             await repl.execute(args)
