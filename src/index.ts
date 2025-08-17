@@ -241,7 +241,7 @@ void (async () => {
             },
         })
         .addOption({
-            name: "view", desc: "View orphaned videos",
+            name: "view", desc: "View videos in a playlist",
             params: [
                 ["index", Type.number],
             ],
@@ -491,7 +491,7 @@ void (async () => {
             },
         })
         .addOption({
-            name: "legacy list", desc: "Imports videos from a legacy archive into a playlist",
+            name: "legacy fetch", desc: "Imports videos from a legacy archive into a playlist",
             params: [
                 ["index", Type.number],
                 ["path", Type.string],
