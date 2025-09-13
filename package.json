@@ -19,7 +19,7 @@
     },
     "dependencies": {
         "@hono/node-server": "^1.18.1",
-        "axios": "^1.11.0",
+        "axios": "^1.12.0",
         "dotenv": "^16.4.5",
         "hono": "^4.9.0",
         "quick-front": "^1.3.0",
