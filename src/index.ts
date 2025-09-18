@@ -1,5 +1,5 @@
 import { AxiosError } from "axios"
-import { exec } from "node:child_process"
+import { exec, ExecException, ProcessEnvOptions } from "node:child_process"
 import { mkdtempSync } from "node:fs"
 import { readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -128,6 +128,14 @@ void (async () => {
         }
 
         return true
+    }
+
+    async function execPromise(command: string, options?: ProcessEnvOptions) {
+        return new Promise<{ error: ExecException | null, stdout: string, stderr: string }>((resolve) => {
+            exec(command, options ?? {}, (error, stdout, stderr) => {
+                resolve({ error, stdout, stderr })
+            })
+        })
     }
 
     function downloadVideo(video: VideoInfo, path: string, { useCookies = false, subsOnly = false } = {}) {
@@ -320,6 +328,24 @@ void (async () => {
                     if (video.file != null) continue
                     i++
                     print(`${`${i.toString().padStart(3, " ")}. ${video.label}` + (video.file == null ? "\x1b[91m (Missing)\x1b[0m" : "")} \x1b[2mhttps://youtu.be/${video.id}\x1b[0m`)
+                }
+            },
+        })
+        .addOption({
+            name: "missing thumbnails", desc: "List videos without thumbnails",
+            async callback() {
+                const project = useProject()
+                const videoRegistry = await project.getVideoRegistry()
+
+                let i = 0
+                for (const video of videoRegistry.videos.values()) {
+                    if (video.thumbnail != null) continue
+                    i++
+                    print(`${`${i.toString().padStart(3, " ")}. ${video.label}` + (video.file == null ? "\x1b[91m (Missing)\x1b[0m" : "")} \x1b[2mhttps://youtu.be/${video.id}\x1b[0m`)
+                }
+
+                if (i == 0) {
+                    print("There are no videos with missing thumbnails")
                 }
             },
         })
@@ -844,6 +870,52 @@ void (async () => {
                 if (video.captions.length == 0) video.captions = null
 
                 await videoRegistry.save()
+            },
+        })
+        .addOption({
+            name: "video thumbnail generate", desc: "Generates a thumbnail of a video from the frame at timestamp",
+            params: [
+                ["id", Type.string],
+                ["timestamp", Type.string],
+            ],
+            async callback(id, timestampString) {
+                const project = useProject()
+                const videoRegistry = await project.getVideoRegistry()
+                const videoFileManager = await project.getVideoFileManager()
+
+                const video = videoRegistry.videos.get(id)
+                if (video == null) {
+                    throw new UserError("Video with the specified ID does not exist")
+                }
+
+                if (video.file == null) {
+                    throw new UserError("The selected video does not have video data")
+                }
+
+                if (video.thumbnail != null) {
+                    print("The selected video already has a thumbnail. It will be replaced.")
+                    if (!areYouSure()) return
+                }
+
+                const thumbnailFile = join(getTempFolder(), `${video.id}.generated.jpg`)
+                const thumbnailFileResized = join(getTempFolder(), `${video.id}.resized.jpg`)
+                const videoFile = join(videoFileManager.path, video.file)
+
+                const ffmpegResult = await execPromise(`ffmpeg -y -ss ${JSON.stringify(timestampString)} -i ${JSON.stringify(videoFile)} -frames:v 1 ${JSON.stringify(thumbnailFile)}`)
+                if (ffmpegResult.error) {
+                    throw new UserError(`Failed to execute FFmpeg: ${ffmpegResult.error.message}`)
+                }
+
+                const magicResult = await execPromise(`magick ${thumbnailFile} -resize '640x360>' -gravity center -background black -extent 640x360 ${thumbnailFileResized}`)
+                if (magicResult.error) {
+                    throw new UserError(`Failed to execute ImageMagick: ${magicResult.error.message}`)
+                }
+
+                const thumbnailData = await readFile(thumbnailFileResized)
+                video.thumbnail = `data:image/jpeg;base64,` + thumbnailData.toString("base64")
+
+                await videoRegistry.save()
+                await rm(getTempFolder(), { force: true, recursive: true })
             },
         })
         .addOption({
