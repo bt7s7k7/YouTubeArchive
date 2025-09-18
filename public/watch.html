@@ -43,16 +43,16 @@
             </template>
         </h1>
         <div>
-            <template for="$channelId in channelId == null ? [] : [channelId]">
-                <template for="$channel in channel == null ? [channelId] : [channel]">
-                    <a href="https://www.youtube.com/channel/$channelId">$channel</a>
+            <template for="$channelUrl in channelUrl == null ? [] : [channelUrl]">
+                <template for="$channel in channel == null ? [channelUrl] : [channel]">
+                    <a href="$channelUrl">$channel</a>
                 </template>
             </template>
-            <template for="$_ in channelId == null ? [''] : []">
+            <template for="$_ in channelUrl == null ? [''] : []">
                 <span class="text-danger">Unknown</span>
             </template>
-            <template for="$id in [id]">
-                <a href="https://www.youtube.com/watch?v=$id" class="muted small">[0]</a>
+            <template for="$url in [url]">
+                <a href="$url" class="muted small">[0]</a>
             </template>
         </div>
         <div>

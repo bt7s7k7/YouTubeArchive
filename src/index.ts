@@ -142,12 +142,12 @@ void (async () => {
         if (useCookies && subsOnly) unreachable()
 
         const command = useCookies ? (
-            `yt-dlp --cookies-from-browser chrome "https://www.youtube.com/watch?v=${video.id}"`
+            `yt-dlp --cookies-from-browser chrome "${video.getUrl()}"`
         ) : (
             subsOnly ? (
-                `yt-dlp --write-subs --sub-langs ".*" --skip-download "https://www.youtube.com/watch?v=${video.id}"`
+                `yt-dlp --write-subs --sub-langs ".*" --skip-download "${video.getUrl()}"`
             ) : (
-                `yt-dlp --write-subs --sub-langs ".*" "https://www.youtube.com/watch?v=${video.id}"`
+                `yt-dlp --write-subs --sub-langs ".*" "${video.getUrl()}"`
             )
         )
 
@@ -200,7 +200,8 @@ void (async () => {
                     print("Playlists:")
                     let i = 0
                     for (const playlist of playlistRegistry.playlists) {
-                        print(`  ${(i + 1).toString().padStart(2, " ")}. \x1b[92m${playlist.label}\x1b[0m \x1b[2m${playlist.videos.length} videos (https://youtube.com/playlist?list=${playlist.url})\x1b[0m`)
+                        const url = playlist.getUrl()
+                        print(`  ${(i + 1).toString().padStart(2, " ")}. \x1b[92m${playlist.label}\x1b[0m \x1b[2m${playlist.videos.length} videos${url == null ? "" : ` (${url})`}\x1b[0m`)
                         i++
                     }
                 }
@@ -223,13 +224,13 @@ void (async () => {
         .addOption({
             name: "playlist add", desc: "Adds a playlist to be archived",
             params: [
-                ["url", Type.string],
+                ["url", Type.string.as(Type.nullable)],
             ],
             options: {
                 label: Type.string.as(Type.nullable),
             },
             async callback(url, { label }) {
-                if (url.includes("list=")) {
+                if (url != null && url.includes("list=")) {
                     url = url.match(/list=([\w-]+)/)![1]
                 }
 
@@ -263,7 +264,7 @@ void (async () => {
                 const playlistRegistry = await project.getPlaylistRegistry()
                 const playlist = await getPlaylistByIndex(index)
 
-                playlist.url = url
+                playlist.sourceId = url
                 await playlistRegistry.save()
             },
         })
@@ -301,7 +302,7 @@ void (async () => {
                         }
                     }
                     i++
-                    print(`${i.toString().padStart(3, " ")}. ${video.label}${video.file == null ? "\x1b[91m (Missing)\x1b[0m" : ""} \x1b[2mhttps://youtu.be/${video.id}\x1b[0m`)
+                    print(`${i.toString().padStart(3, " ")}. ${video.label}${video.file == null ? "\x1b[91m (Missing)\x1b[0m" : ""} \x1b[2m${video.getShortUrl()}\x1b[0m`)
                 }
 
             },
@@ -312,7 +313,7 @@ void (async () => {
                 let i = 0
                 for (const video of await getOrphanVideos()) {
                     i++
-                    print(`${i.toString().padStart(3, " ")}. ${video.label}${video.file == null ? "\x1b[91m (Missing)\x1b[0m" : ""} \x1b[2mhttps://youtu.be/${video.id}\x1b[0m`)
+                    print(`${i.toString().padStart(3, " ")}. ${video.label}${video.file == null ? "\x1b[91m (Missing)\x1b[0m" : ""} \x1b[2m${video.getShortUrl()}\x1b[0m`)
                 }
             },
         })
@@ -326,7 +327,7 @@ void (async () => {
                 for (const video of videoRegistry.videos.values()) {
                     if (video.file != null) continue
                     i++
-                    print(`${i.toString().padStart(3, " ")}. ${video.label} \x1b[2mhttps://youtu.be/${video.id}\x1b[0m`)
+                    print(`${i.toString().padStart(3, " ")}. ${video.label} \x1b[2m${video.getShortUrl()}\x1b[0m`)
                 }
             },
         })
@@ -340,7 +341,7 @@ void (async () => {
                 for (const video of videoRegistry.videos.values()) {
                     if (video.thumbnail != null) continue
                     i++
-                    print(`${i.toString().padStart(3, " ")}. ${video.label} \x1b[2mhttps://youtu.be/${video.id}\x1b[0m`)
+                    print(`${i.toString().padStart(3, " ")}. ${video.label} \x1b[2m${video.getShortUrl()}\x1b[0m`)
                 }
 
                 if (i == 0) {
@@ -362,7 +363,10 @@ void (async () => {
 
                 for (const playlist of playlists) {
                     playlistConcurrency.push(async () => {
-                        const videoSnippets = await getPlaylistVideos(playlist.label, playlist.url, project.getToken())
+                        // Playlist could not have an associated YouTube playlist
+                        if (playlist.sourceId == null) return
+
+                        const videoSnippets = await getPlaylistVideos(playlist.label, playlist.sourceId, project.getToken())
                         const ids: string[] = []
                         for (const videoData of videoSnippets) {
                             if (videoData.contentDetails.videoPublishedAt == null) {
@@ -699,6 +703,45 @@ void (async () => {
             },
         })
         .addOption({
+            name: "video external add", desc: "Adds a new video not from YouTube",
+            params: [
+                ["id", Type.string],
+                ["url", Type.string],
+            ],
+            options: VIDEO_PROPERTIES,
+            async callback(id, url, properties) {
+                const project = useProject()
+                const videoRegistry = await project.getVideoRegistry()
+
+                if (videoRegistry.videos.has(id)) {
+                    throw new UserError("Video with the specified ID already exists")
+                }
+
+                validateVideoProperties(properties)
+                const tumblrFormat = url.match(/^https:\/\/www.tumblr.com\/([\w-]+)\/([\w-]+)/)
+                if (tumblrFormat) {
+                    properties.channel ??= tumblrFormat[1]
+                    properties.channelId ??= `https://www.tumblr.com/${tumblrFormat[1]}`
+                }
+
+                const video = new VideoInfo({
+                    id, url,
+                    label: id,
+                    description: "",
+                    publishedAt: new Date().toISOString(),
+                })
+
+                for (const [key, value] of Object.entries(properties)) {
+                    if (value != null) {
+                        (video as any)[key] = value
+                    }
+                }
+
+                videoRegistry.addVideo(video)
+                await videoRegistry.save()
+            },
+        })
+        .addOption({
             name: "video update", desc: "Allows you to update video metadata",
             params: [
                 ["id", Type.string],
@@ -875,9 +918,10 @@ void (async () => {
             name: "video thumbnail generate", desc: "Generates a thumbnail of a video from the frame at timestamp",
             params: [
                 ["id", Type.string],
-                ["timestamp", Type.string],
+                ["timestamp", Type.string.as(Type.nullable)],
             ],
             async callback(id, timestampString) {
+                timestampString ??= "00:00:00"
                 const project = useProject()
                 const videoRegistry = await project.getVideoRegistry()
                 const videoFileManager = await project.getVideoFileManager()
@@ -893,7 +937,7 @@ void (async () => {
 
                 if (video.thumbnail != null) {
                     print("The selected video already has a thumbnail. It will be replaced.")
-                    if (!areYouSure()) return
+                    if (!await areYouSure()) return
                 }
 
                 const thumbnailFile = join(getTempFolder(), `${video.id}.generated.jpg`)
@@ -915,6 +959,7 @@ void (async () => {
 
                 await videoRegistry.save()
                 await rm(getTempFolder(), { force: true, recursive: true })
+                _tmp = null
             },
         })
         .addOption({
@@ -966,13 +1011,13 @@ void (async () => {
             }
 
             if (parser.consume("\"")) {
-                arg += parser.readUntil("\"")
+                arg += parser.readUntil("\"").replace(/(?<!\\)\\n/g, "\n").replace(/\\\\/g, "\\")
                 parser.index++
                 continue
             }
 
             if (parser.consume("'")) {
-                arg += parser.readUntil("'")
+                arg += parser.readUntil("'").replace(/(?<!\\)\\n/g, "\n").replace(/\\\\/g, "\\")
                 parser.index++
                 continue
             }

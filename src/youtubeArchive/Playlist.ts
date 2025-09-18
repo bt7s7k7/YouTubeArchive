@@ -10,11 +10,19 @@ import { VideoInfo } from "./VideoInfo"
 export class Playlist {
     constructor(
         public readonly id: string,
-        public url: string,
+        public sourceId: string | null,
         public label: string,
         public readonly videos: readonly VideoInfo[],
         public readonly labels: Map<number, string>,
     ) { }
+
+    public getUrl() {
+        if (this.sourceId != null) {
+            return `https://youtube.com/playlist?list=${this.sourceId}`
+        } else {
+            return null
+        }
+    }
 }
 
 export class PlaylistRegistry {
@@ -109,8 +117,7 @@ export class PlaylistRegistry {
         for (const playlist of this.playlists) {
             const content = [
                 `id = ${playlist.id}`,
-                `url = ${playlist.url}`,
-                "",
+                playlist.sourceId != null ? `url = ${playlist.sourceId}\n` : "",
                 ...playlist.videos.flatMap((v, i) => {
                     const video = `${v.id} ${v.label}`
 
@@ -202,10 +209,6 @@ export class PlaylistRegistry {
 
                     orphanVideos.delete(video)
                     videos.push(video)
-                }
-
-                if (url == null) {
-                    throw new UserError(`Missing playlist url at ${configFile}`)
                 }
 
                 playlists.push(new Playlist(id, url, label, videos, labels))

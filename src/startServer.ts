@@ -18,11 +18,12 @@ import { VideoInfo } from "./youtubeArchive/VideoInfo"
 
 export class VideoDisplay extends Struct.define("VideoDisplay", {
     id: Type.string.as(Type.nullable),
+    url: Type.string,
     label: Type.string,
     thumbnail: Type.string,
     captions: Type.string.as(Type.array).as(Type.nullable),
     channel: Type.string.as(Type.nullable),
-    channelId: Type.string.as(Type.nullable),
+    channelUrl: Type.string.as(Type.nullable),
     publishedAt: Type.string,
     publishedAgo: Type.string,
 }) { }
@@ -107,7 +108,7 @@ export function startServer() {
                                 thumbnail: getThumbnailUrl(Optional.pcall(() => iteratorNth(videoRegistry.videos.values())).tryUnwrap()),
                             }).serialize(),
                             ...playlistRegistry.playlists.map(playlist => new PlaylistDisplay({
-                                id: playlist.id, label: playlist.label, url: playlist.url,
+                                id: playlist.id, label: playlist.label, url: playlist.sourceId,
                                 size: playlist.videos.length,
                                 thumbnail: getThumbnailUrl(playlist.videos.at(0)),
                             }).serialize()),
@@ -116,12 +117,14 @@ export function startServer() {
                     .replace(/\$\$VIDEOS\$\$/, () => (
                         JSON.stringify({
                             label: playlist?.label ?? "All Videos",
-                            url: playlist?.url,
+                            url: playlist?.sourceId,
                             labels: playlist == null ? [] : [...playlist.labels.entries()],
                             videos: (playlist?.videos ?? [...videoRegistry.videos.values()]).map(video => new VideoDisplay({
                                 id: video.file == null ? null : video.id,
+                                url: video.getUrl(),
                                 label: video.label,
-                                channel: video.channel, channelId: video.channelId,
+                                channel: video.channel,
+                                channelUrl: video.getChannelUrl(),
                                 thumbnail: getThumbnailUrl(video),
                                 captions: video.getCaptionsList(),
                                 publishedAt: video.publishedAt,
@@ -132,6 +135,8 @@ export function startServer() {
                     .replace(/\$\$VIDEO\$\$/, () => (
                         JSON.stringify({
                             ...video!.serialize(),
+                            url: video!.getUrl(),
+                            channelUrl: video!.getChannelUrl(),
                             publishedAgo: ta.ago(video!.publishedAt),
                         })
                     ))

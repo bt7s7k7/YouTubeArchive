@@ -5,6 +5,7 @@ import { Type } from "../struct/Type"
 
 export class VideoInfo extends Struct.define("VideoInfo", {
     id: Type.string,
+    url: Type.string.as(Type.nullable),
     channel: Type.string.as(Type.nullable),
     channelId: Type.string.as(Type.nullable),
     label: Type.string,
@@ -16,5 +17,30 @@ export class VideoInfo extends Struct.define("VideoInfo", {
 }) {
     public getCaptionsList() {
         return this.captions ? autoFilter(this.captions.map(file => file.match(/\.(\w+)\.vtt$/)?.[1])) : EMPTY_ARRAY as never
+    }
+
+    public getUrl() {
+        if (this.url != null) {
+            return this.url
+        } else {
+            return `https://www.youtube.com/watch?v=${this.id}`
+        }
+    }
+
+    public getShortUrl() {
+        if (this.url != null) {
+            return this.url
+        } else {
+            return `https://youtu.be/${this.id}`
+        }
+    }
+
+    public getChannelUrl() {
+        if (this.channelId == null) return null
+        if (this.channelId.includes("://")) {
+            return this.channelId
+        } else {
+            return `https://www.youtube.com/channel/${this.channelId}`
+        }
     }
 }

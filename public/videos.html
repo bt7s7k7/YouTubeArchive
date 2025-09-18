@@ -72,14 +72,14 @@
                             <div class="flex-wrap">
                                 ${video.id == null ? /*html*/`<div class="text-danger">(Missing)</div>` : ""}
                                 <b>${video.label}</b>
-                                ${video.id != null ? /*html*/`<a href="https://www.youtube.com/watch?v=${video.id}" class="muted">[${i++}]</a>` : ""}
+                                ${video.id != null ? /*html*/`<a href="${video.url}" class="muted">[${i++}]</a>` : ""}
                                 ${video.captions.map(caption => (
                                     /*html*/`<small class="bg-primary-transparent small px-1 rounded">${caption}</small>`
                 )).join("\n")}
                             </div>
                             <div class="small muted">
-                                ${video.channelId != null && video.channel != null ? (
-                                    /*html*/`<a href="https://www.youtube.com/channel/${video.channelId}">${video.channel}</a>`
+                                ${video.channelUrl != null && video.channel != null ? (
+                                    /*html*/`<a href="${video.channelUrl}">${video.channel}</a>`
                     ) : (
                                     /*html*/`<span class="text-danger">Unknown</span>`
                     )}
