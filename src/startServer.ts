@@ -117,6 +117,7 @@ export function startServer() {
                         JSON.stringify({
                             label: playlist?.label ?? "All Videos",
                             url: playlist?.url,
+                            labels: playlist == null ? [] : [...playlist.labels.entries()],
                             videos: (playlist?.videos ?? [...videoRegistry.videos.values()]).map(video => new VideoDisplay({
                                 id: video.file == null ? null : video.id,
                                 label: video.label,

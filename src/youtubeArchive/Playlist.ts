@@ -13,6 +13,7 @@ export class Playlist {
         public url: string,
         public label: string,
         public readonly videos: readonly VideoInfo[],
+        public readonly labels: Map<number, string>,
     ) { }
 }
 
@@ -45,19 +46,49 @@ export class PlaylistRegistry {
     }
 
     public addVideoToPlaylist(video: VideoInfo, playlist: Playlist) {
-        (playlist.videos as Readwrite<typeof playlist.videos>).push(video)
-        ensureKey(this._getVideoCache(), video.id, () => new Set()).add(playlist.id)
+        this.insertVideoToPlaylist(video, playlist, playlist.videos.length)
     }
 
     public insertVideoToPlaylist(video: VideoInfo, playlist: Playlist, index: number) {
         (playlist.videos as Readwrite<typeof playlist.videos>).splice(index, 0, video)
+        const labels = [...playlist.labels.entries()]
+        labels.reverse()
+
+        for (const [labelIndex, label] of labels) {
+            if (labelIndex >= index) {
+                playlist.labels.delete(labelIndex)
+                const existing = playlist.labels.get(labelIndex + 1)
+                if (existing != null) {
+                    playlist.labels.set(labelIndex + 1, label + "\n" + existing)
+                } else {
+                    playlist.labels.set(labelIndex + 1, label)
+                }
+            }
+        }
+
         ensureKey(this._getVideoCache(), video.id, () => new Set()).add(playlist.id)
     }
 
     public removeVideoFromPlaylist(video: VideoInfo, playlist: Playlist) {
         const index = playlist.videos.indexOf(video)
         if (index == -1) return false
+
         void (playlist.videos as Readwrite<typeof playlist.videos>).splice(index, 1)
+
+        const labels = [...playlist.labels.entries()]
+
+        for (const [labelIndex, label] of labels) {
+            if (labelIndex > index) {
+                playlist.labels.delete(labelIndex)
+                const existing = playlist.labels.get(labelIndex - 1)
+                if (existing != null) {
+                    playlist.labels.set(labelIndex - 1, existing + "\n" + label)
+                } else {
+                    playlist.labels.set(labelIndex - 1, label)
+                }
+            }
+        }
+
         this._getVideoCache().get(video.id)?.delete(playlist.id)
         return true
     }
@@ -80,7 +111,20 @@ export class PlaylistRegistry {
                 `id = ${playlist.id}`,
                 `url = ${playlist.url}`,
                 "",
-                ...playlist.videos.map(v => `${v.id} ${v.label}`),
+                ...playlist.videos.flatMap((v, i) => {
+                    const video = `${v.id} ${v.label}`
+
+                    const label = playlist.labels.get(i)
+                    if (label != null) {
+                        return [
+                            "",
+                            ...label.split("\n").map(v => ">>> " + v),
+                            video,
+                        ]
+                    }
+
+                    return [video]
+                }),
             ]
 
             const configFile = join(this.path, playlist.label + ".ini")
@@ -111,6 +155,7 @@ export class PlaylistRegistry {
                 let url: string | null = null
                 let id = makeRandomID()
                 const videos: VideoInfo[] = []
+                const labels = new Map<number, string>()
 
                 let i = 0
                 for (let line of content.split("\n")) {
@@ -126,6 +171,21 @@ export class PlaylistRegistry {
 
                     if (line.startsWith("id = ")) {
                         id = line.slice(5)
+                        continue
+                    }
+
+                    if (line.startsWith(">")) {
+                        const start = line.match(/[^>]/)
+                        if (!start) continue
+                        const startIndex = start.index
+                        const label = line.slice(startIndex).trim()
+
+                        if (labels.has(videos.length)) {
+                            labels.set(videos.length, labels.get(videos.length) + "\n" + label)
+                        } else {
+                            labels.set(videos.length, label)
+                        }
+
                         continue
                     }
 
@@ -148,7 +208,7 @@ export class PlaylistRegistry {
                     throw new UserError(`Missing playlist url at ${configFile}`)
                 }
 
-                playlists.push(new Playlist(id, url, label, videos))
+                playlists.push(new Playlist(id, url, label, videos, labels))
             }
         }
 

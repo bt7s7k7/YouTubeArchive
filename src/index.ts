@@ -234,7 +234,7 @@ void (async () => {
                     return
                 }
 
-                playlistRegistry.playlists.push(new Playlist(makeRandomID(), url, label, []))
+                playlistRegistry.playlists.push(new Playlist(makeRandomID(), url, label, [], new Map()))
                 await playlistRegistry.save()
 
                 printInfo(`Added playlist "${label}"`)
@@ -277,7 +277,7 @@ void (async () => {
             },
         })
         .addOption({
-            name: "view", desc: "View videos in a playlist",
+            name: "list", desc: "Prints videos in a playlist",
             params: [
                 ["index", Type.number],
             ],
@@ -286,9 +286,15 @@ void (async () => {
 
                 let i = 0
                 for (const video of playlist.videos) {
+                    const label = playlist.labels.get(i)
+                    if (label != null) {
+                        for (const line of label.split("\n")) {
+                            print(`\x1b[93m>>> ${line}\x1b[0m`)
+                        }
+                    }
                     i++
                     const msg = `${i.toString().padStart(3, " ")}. ${video.label}`
-                    print(`${`${i.toString().padStart(3, " ")}. ${video.label}` + (video.file == null ? "\x1b[91m (Missing)\x1b[0m" : "")} \x1b[2mhttps://youtu.be/${video.id}\x1b[0m`)
+                    print(`${msg + (video.file == null ? "\x1b[91m (Missing)\x1b[0m" : "")} \x1b[2mhttps://youtu.be/${video.id}\x1b[0m`)
                 }
 
             },

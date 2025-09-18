@@ -48,8 +48,19 @@
 
             const videosElement = document.getElementById("videos")
 
+            /** @type {[number, string][]} */
+            const labels = page.labels
+
             let i = 0
             for (const video of page.videos) {
+                if (labels.length > 0 && labels[0][0] == i) {
+                    const [, text] = labels.shift()
+                    const label = document.createElement("h1")
+                    label.classList.add("border-bottom")
+                    label.innerHTML = escapeHTML(text)
+                    videosElement.append(label)
+                }
+
                 const anchor = document.createElement("a")
                 anchor.href = `/watch?v=${video.id}`
                 anchor.setAttribute("class", "as-button flat as-clickable text-left flex row border-bottom gap-2 p-2")
