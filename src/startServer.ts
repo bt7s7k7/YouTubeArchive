@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs"
 import { extname, join } from "node:path"
 import files from "virtual:server-files"
 import { Optional } from "./comTypes/Optional"
-import { iteratorNth } from "./comTypes/util"
+import { fromBase64Binary, iteratorNth } from "./comTypes/util"
 import { Struct } from "./struct/Struct"
 import { Type } from "./struct/Type"
 import { Playlist } from "./youtubeArchive/Playlist"
@@ -48,6 +48,31 @@ export function startServer() {
 
     files[""] = files["index.html"]
 
+    app.get("/api/thumbnail/:id", async c => {
+        const id = c.req.param("id")
+        const videoRegistry = await project.getVideoRegistry()
+        const video = videoRegistry.videos.get(id)
+
+        if (video?.thumbnail) {
+            const mime = video.thumbnail.slice(5, video.thumbnail.indexOf(";"))
+            return c.body(fromBase64Binary(video.thumbnail.slice(video.thumbnail.indexOf(",") + 1)), 200, {
+                "Content-Type": mime,
+            })
+        } else {
+            return c.body(fromBase64Binary(DEFAULT_THUMBNAIL.slice(DEFAULT_THUMBNAIL.indexOf(",") + 1)), 404, {
+                "Content-Type": "image/png",
+            })
+        }
+    })
+
+    function getThumbnailUrl(video: VideoInfo | null | undefined) {
+        if (video?.thumbnail) {
+            return `/api/thumbnail/${video.id}`
+        } else {
+            return `/api/thumbnail/invalid`
+        }
+    }
+
     for (const [path, content] of Object.entries(files)) {
         app.get(path.endsWith(".html") ? path.slice(0, -5) : path, async c => {
             let templatedContent = content
@@ -79,12 +104,12 @@ export function startServer() {
                             new PlaylistDisplay({
                                 label: "All Videos",
                                 size: videoRegistry.videos.size,
-                                thumbnail: Optional.pcall(() => iteratorNth(videoRegistry.videos.values()).thumbnail).tryUnwrap() ?? DEFAULT_THUMBNAIL,
+                                thumbnail: getThumbnailUrl(Optional.pcall(() => iteratorNth(videoRegistry.videos.values())).tryUnwrap()),
                             }).serialize(),
                             ...playlistRegistry.playlists.map(playlist => new PlaylistDisplay({
                                 id: playlist.id, label: playlist.label, url: playlist.url,
                                 size: playlist.videos.length,
-                                thumbnail: playlist.videos.at(0)?.thumbnail ?? DEFAULT_THUMBNAIL,
+                                thumbnail: getThumbnailUrl(playlist.videos.at(0)),
                             }).serialize()),
                         ])
                     ))
@@ -96,7 +121,7 @@ export function startServer() {
                                 id: video.file == null ? null : video.id,
                                 label: video.label,
                                 channel: video.channel, channelId: video.channelId,
-                                thumbnail: video.thumbnail ?? DEFAULT_THUMBNAIL,
+                                thumbnail: getThumbnailUrl(video),
                                 captions: video.getCaptionsList(),
                                 publishedAt: video.publishedAt,
                                 publishedAgo: ta.ago(video.publishedAt),
