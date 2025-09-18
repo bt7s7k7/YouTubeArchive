@@ -87,6 +87,18 @@
                         video.requestFullscreen()
                     }
                 }
+
+                if (event.code == "Space") {
+                    const video = document.querySelector("video")
+                    if (video.paused) {
+                        video.play()
+                    } else {
+                        video.pause()
+                    }
+
+                    // Prevent scrolling
+                    event.preventDefault()
+                }
             })
 
             document.title = video.label + " - YouTube Archive"
@@ -100,6 +112,10 @@
                     video.play()
                 })
             }, 1)
+
+            setInterval(() => {
+                document.activeElement?.blur()
+            }, 50)
         }
     </script>
 </body>
