@@ -301,8 +301,7 @@ void (async () => {
                         }
                     }
                     i++
-                    const msg = `${i.toString().padStart(3, " ")}. ${video.label}`
-                    print(`${msg + (video.file == null ? "\x1b[91m (Missing)\x1b[0m" : "")} \x1b[2mhttps://youtu.be/${video.id}\x1b[0m`)
+                    print(`${i.toString().padStart(3, " ")}. ${video.label}${video.file == null ? "\x1b[91m (Missing)\x1b[0m" : ""} \x1b[2mhttps://youtu.be/${video.id}\x1b[0m`)
                 }
 
             },
@@ -313,7 +312,7 @@ void (async () => {
                 let i = 0
                 for (const video of await getOrphanVideos()) {
                     i++
-                    print(`${`${i.toString().padStart(3, " ")}. ${video.label}` + (video.file == null ? "\x1b[91m (Missing)\x1b[0m" : "")} \x1b[2mhttps://youtu.be/${video.id}\x1b[0m`)
+                    print(`${i.toString().padStart(3, " ")}. ${video.label}${video.file == null ? "\x1b[91m (Missing)\x1b[0m" : ""} \x1b[2mhttps://youtu.be/${video.id}\x1b[0m`)
                 }
             },
         })
@@ -327,7 +326,7 @@ void (async () => {
                 for (const video of videoRegistry.videos.values()) {
                     if (video.file != null) continue
                     i++
-                    print(`${`${i.toString().padStart(3, " ")}. ${video.label}` + (video.file == null ? "\x1b[91m (Missing)\x1b[0m" : "")} \x1b[2mhttps://youtu.be/${video.id}\x1b[0m`)
+                    print(`${i.toString().padStart(3, " ")}. ${video.label} \x1b[2mhttps://youtu.be/${video.id}\x1b[0m`)
                 }
             },
         })
@@ -341,7 +340,7 @@ void (async () => {
                 for (const video of videoRegistry.videos.values()) {
                     if (video.thumbnail != null) continue
                     i++
-                    print(`${`${i.toString().padStart(3, " ")}. ${video.label}` + (video.file == null ? "\x1b[91m (Missing)\x1b[0m" : "")} \x1b[2mhttps://youtu.be/${video.id}\x1b[0m`)
+                    print(`${i.toString().padStart(3, " ")}. ${video.label} \x1b[2mhttps://youtu.be/${video.id}\x1b[0m`)
                 }
 
                 if (i == 0) {
