@@ -1,5 +1,5 @@
 import axios, { AxiosError } from "axios"
-import { cp, mkdir, readdir, readFile, rm } from "node:fs/promises"
+import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import { extname, join, relative } from "node:path"
 import { ensureKey } from "../comTypes/util"
 import { UserError } from "./UserError"
@@ -138,6 +138,16 @@ function _getFilenameForVideo(video: VideoInfo, ext: string) {
     return escapeFilename(`${video.label} [${video.id}]${ext}`)
 }
 
+export function getCaptionsExt(captionsFile: string) {
+    const ext = captionsFile.match(/((?:\.[a-z0-9]+)+)$/)?.[1]
+
+    if (ext == null) {
+        throw new UserError(`Failed to parse extension from captions file "${captionsFile}"`)
+    }
+
+    return ext
+}
+
 export class VideoFileManager {
     public async importVideoFile(video: VideoInfo, file: string) {
         const resultName = _getFilenameForVideo(video, extname(file))
@@ -149,13 +159,16 @@ export class VideoFileManager {
     }
 
     public async importCaptionsFile(video: VideoInfo, captionsFile: string) {
-        const ext = captionsFile.match(/((?:\.[a-z0-9]+)+)$/)?.[1]
-        if (ext == null) {
-            throw new UserError(`Failed to parse extension from captions file "${captionsFile}"`)
-        }
+        const ext = getCaptionsExt(captionsFile)
 
         const fullPath = join(this.path, _getFilenameForVideo(video, ext))
         await cp(captionsFile, fullPath)
+        void (video.captions ??= []).push(relative(this.path, fullPath))
+    }
+
+    public async importCaptionsRaw(video: VideoInfo, language: string, captionsFileContent: string) {
+        const fullPath = join(this.path, _getFilenameForVideo(video, `.${language}.vtt`))
+        await writeFile(fullPath, captionsFileContent)
         void (video.captions ??= []).push(relative(this.path, fullPath))
     }
 
@@ -169,6 +182,10 @@ export class VideoFileManager {
                 await rm(join(this.path, captionFile))
             }
         }
+    }
+
+    public async deleteFile(name: string) {
+        await rm(join(this.path, name))
     }
 
     public static async load(path: string) {

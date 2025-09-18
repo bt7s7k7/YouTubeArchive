@@ -51,41 +51,45 @@ When reading the playlist file, only the video ID is considered. The video label
 > When a command requires an `index` argument, this refers to a playlist index. To view playlist indices use the `status` command.
 
 ```
-  quit             - Stops the application
-  help             - Prints help text
-  reload           - Clears cache to reload config files
+  quit                  - Stops the application
+  help                  - Prints help text
+  reload                - Clears cache to reload config files
     --path: string | null
-  status           - Prints the status of the current project
-  playlist add     - Adds a playlist to be archived
+  status                - Prints the status of the current project
+  playlist add          - Adds a playlist to be archived
     <url>: string, --label: string | null
-  playlist set url - Changes the url of the selected playlist
+  playlist set url      - Changes the url of the selected playlist
     <index>: number, <url>: string
-  playlist delete  - Deletes a playlist
+  playlist delete       - Deletes a playlist
     <index>: number
-  view             - View orphaned videos
+  view                  - View videos in a playlist
     <index>: number
-  orphans          - List orphaned videos
-  orphans delete   - Deletes all orphan videos
-  missing          - List videos without video files
-  fetch            - Fetches the list of videos in each playlist
-  pull             - Downloads missing video files
-  pull captions    - Downloads missing video captions
-  legacy pull      - Pulls video files from a legacy archive
+  orphans               - List orphaned videos
+  orphans delete        - Deletes all orphan videos
+  missing               - List videos without video files
+  fetch                 - Fetches the list of videos in each playlist
+  pull                  - Downloads missing video files
+  pull captions         - Downloads missing video captions
+  legacy pull           - Pulls video files from a legacy archive
     <path>: string
-  legacy fetch     - Imports videos from a legacy archive into a playlist
+  legacy fetch          - Imports videos from a legacy archive into a playlist
     <index>: number, <path>: string
-  wipe videos      - Deletes all video files
-  video            - Displays video metadata
+  wipe videos           - Deletes all video files
+  video                 - Displays video metadata
     <id>: string
-  video delete     - Deletes a video
+  video delete          - Deletes a video
     <id>: string
-  video add        - Adds a new video
+  video add             - Adds a new video
     <id>: string, --label: string | null, --description: string | null, --publishedAt: string | null, --channel: string | null, --channelId: string | null
-  video update     - Allows you to update video metadata
+  video update          - Allows you to update video metadata
     <id>: string, --label: string | null, --description: string | null, --publishedAt: string | null, --channel: string | null, --channelId: string | null
-  video fetch      - Fetches metadata for a video
+  video fetch           - Fetches metadata for a video
     <id>: string
-  flush            - Rewrite all data files to a normalized form
+  video captions import - Imports captions from a VTT or SRT file.
+    <id>: string, <file>: string, --language: string | null
+  video captions delete - Deletes captions from a video.
+    <id>: string, <type>: string
+  flush                 - Rewrite all data files to a normalized form
 ```
 
 ## Web interface

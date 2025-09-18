@@ -1,27 +1,63 @@
 import { AxiosError } from "axios"
 import { exec } from "node:child_process"
 import { mkdtempSync } from "node:fs"
-import { rm } from "node:fs/promises"
+import { readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { basename, dirname, extname, join, resolve } from "node:path"
 import { createInterface } from "node:readline/promises"
 import { inspect } from "node:util"
 import { Cli } from "./cli/Cli"
 import { GenericParser } from "./comTypes/GenericParser"
-import { asyncConcurrency, makeRandomID, unreachable } from "./comTypes/util"
+import { arrayRemove, asyncConcurrency, makeRandomID, unreachable } from "./comTypes/util"
 import { startServer } from "./startServer"
 import { Type } from "./struct/Type"
+import { convertSrtToVtt } from "./youtubeArchive/convertSrtToVtt"
 import { Playlist } from "./youtubeArchive/Playlist"
 import { print, printError, printInfo, printWarn } from "./youtubeArchive/print"
 import { Project } from "./youtubeArchive/Project"
 import { setActiveProject, useProject } from "./youtubeArchive/state"
 import { UserError } from "./youtubeArchive/UserError"
-import { downloadThumbnailBasedOnYoutubeVideo, indexSourceDirectory, parseInfoFile, parseYoutubeVideo } from "./youtubeArchive/VideoFileManager"
+import { downloadThumbnailBasedOnYoutubeVideo, getCaptionsExt, indexSourceDirectory, parseInfoFile, parseYoutubeVideo } from "./youtubeArchive/VideoFileManager"
 import { VideoInfo } from "./youtubeArchive/VideoInfo"
 import { getPlaylistVideos, getVideoMetadata } from "./youtubeArchive/youtubeApi"
 
 void (async () => {
-    const rootPath = process.argv.at(2) ?? process.cwd()
+    let rootPath = process.cwd()
+    let shouldExit = true
+
+    const cli = new Cli("index.mjs")
+        .addOption({
+            name: "", desc: "Start the interactive user interface",
+            params: [
+                ["path", Type.string.as(Type.nullable)],
+            ],
+            async callback(path) {
+                if (path != null) rootPath = resolve(path)
+                shouldExit = false
+            },
+        })
+        .addOption({
+            name: "help", desc: "Prints the help message",
+            async callback() {
+                cli.printHelp()
+            },
+        })
+        .addOption({
+            name: "srt2vtt", desc: "Invoke the SRT to VTT format convertor",
+            params: [
+                ["source", Type.string],
+                ["destination", Type.string.as(Type.nullable)],
+            ],
+            async callback(source, destination) {
+                destination ??= join(dirname(source), basename(source, extname(source)) + ".vtt")
+
+                await writeFile(destination, convertSrtToVtt(await readFile(source, "utf-8")))
+            },
+        })
+
+    await cli.execute(process.argv.slice(2))
+    if (shouldExit) return
+
     if (rootPath != process.cwd()) {
         printWarn(`Opening archive project at "${rootPath}"`)
     }
@@ -705,6 +741,101 @@ void (async () => {
                 }
 
                 await downloadThumbnailBasedOnYoutubeVideo(video, videoData)
+
+                await videoRegistry.save()
+            },
+        })
+        .addOption({
+            name: "video captions import", desc: "Imports captions from a VTT or SRT file.",
+            params: [
+                ["id", Type.string],
+                ["file", Type.string],
+            ],
+            options: {
+                language: Type.string.as(Type.nullable),
+            },
+            async callback(id, file, { language }) {
+                const project = useProject()
+                const videoRegistry = await project.getVideoRegistry()
+                const videoFileManager = await project.getVideoFileManager()
+
+                const video = videoRegistry.videos.get(id)
+                if (video == null) {
+                    throw new UserError("Video with the specified ID does not exist")
+                }
+
+                let fileData
+                try {
+                    fileData = await readFile(file, "utf-8")
+                } catch (err: any) {
+                    throw new UserError("Failed to read file: " + err.message)
+                }
+
+                if (language == null) {
+                    const ext = getCaptionsExt(file)
+                    const languageCode = basename(ext, extname(ext))
+                    if (languageCode == ext || !languageCode) {
+                        throw new UserError("Failed to parse language code from file extension, please specify the language")
+                    }
+                    language = languageCode.slice(1)
+                }
+
+                const extension = extname(file)
+                if (extension == ".srt") {
+                    const captions = convertSrtToVtt(fileData)
+                    await videoFileManager.importCaptionsRaw(video, language, captions)
+                } else if (extension == ".vtt") {
+                    await videoFileManager.importCaptionsFile(video, file)
+                } else {
+                    throw new UserError("Only SRT or VTT files are supported")
+                }
+
+                print("Video captions:")
+                for (const captionFile of video.captions!) {
+                    print("  " + captionFile)
+                }
+
+                await videoRegistry.save()
+            },
+        })
+        .addOption({
+            name: "video captions delete", desc: "Deletes captions from a video.",
+            params: [
+                ["id", Type.string],
+                ["type", Type.string],
+            ],
+            async callback(id, type) {
+                const project = useProject()
+                const videoRegistry = await project.getVideoRegistry()
+                const videoFileManager = await project.getVideoFileManager()
+
+                const video = videoRegistry.videos.get(id)
+                if (video == null) {
+                    throw new UserError("Video with the specified ID does not exist")
+                }
+
+                if (video.captions == null) {
+                    throw new UserError("Selected video does not have captions")
+                }
+
+                const toDelete = video.captions.filter(v => v.endsWith(type))
+                if (toDelete.length == 0) {
+                    throw new UserError("The provided pattern does not match any captions")
+                }
+
+                print("The following files will be deleted:")
+                for (const file of toDelete) {
+                    print("  " + file)
+                }
+
+                if (!await areYouSure()) return
+
+                for (const file of toDelete) {
+                    arrayRemove(video.captions, file)
+                    await videoFileManager.deleteFile(file)
+                }
+
+                if (video.captions.length == 0) video.captions = null
 
                 await videoRegistry.save()
             },
