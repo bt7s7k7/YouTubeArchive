@@ -86,6 +86,10 @@
                     } else {
                         video.requestFullscreen()
                     }
+
+                    setTimeout(() => {
+                        document.activeElement?.blur()
+                    }, 10)
                 }
 
                 if (event.code == "Space") {
@@ -113,9 +117,9 @@
                 })
             }, 1)
 
-            setInterval(() => {
+            window.addEventListener("mouseleave", () => {
                 document.activeElement?.blur()
-            }, 50)
+            })
         }
     </script>
 </body>
