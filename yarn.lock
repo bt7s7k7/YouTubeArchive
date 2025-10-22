@@ -822,10 +822,10 @@ hasown@^2.0.2:
   dependencies:
     function-bind "^1.1.2"
 
-hono@^4.9.0:
-  version "4.9.0"
-  resolved "https://registry.yarnpkg.com/hono/-/hono-4.9.0.tgz#dee39d4a1859ef00dfec6e8b9bd4b0ef2e134870"
-  integrity sha512-JAUc4Sqi3lhby2imRL/67LMcJFKiCu7ZKghM7iwvltVZzxEC5bVJCsAa4NTnSfmWGb+N2eOVtFE586R+K3fejA==
+hono@^4.10.2:
+  version "4.10.2"
+  resolved "https://registry.yarnpkg.com/hono/-/hono-4.10.2.tgz#a78d322f2c5fabebb1887f7ae1632a6524513e74"
+  integrity sha512-p6fyzl+mQo6uhESLxbF5WlBOAJMDh36PljwlKtP5V1v09NxlqGru3ShK+4wKhSuhuYf8qxMmrivHOa/M7q0sMg==
 
 ignore@^5.2.0:
   version "5.3.2"
