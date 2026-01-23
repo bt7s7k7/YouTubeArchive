@@ -70,9 +70,9 @@
                         </div>
                         <div class="flex column gap-2">
                             <div class="flex-wrap">
-                                ${video.id == null ? /*html*/`<div class="text-danger">(Missing)</div>` : ""}
+                                ${video.missing ? /*html*/`<div class="text-danger">(Missing)</div>` : ""}
                                 <b>${video.label}</b>
-                                ${video.id != null ? /*html*/`<a href="${video.url}" class="muted">[${i++}]</a>` : ""}
+                                <a href="${video.url}" class="muted">[${i++}]</a>
                                 ${video.captions.map(caption => (
                                     /*html*/`<small class="bg-primary-transparent small px-1 rounded">${caption}</small>`
                 )).join("\n")}

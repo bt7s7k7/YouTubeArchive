@@ -17,7 +17,8 @@ import { DEFAULT_THUMBNAIL } from "./DEFAULT_THUMBNAIL"
 import { VideoInfo } from "./youtubeArchive/VideoInfo"
 
 export class VideoDisplay extends Struct.define("VideoDisplay", {
-    id: Type.string.as(Type.nullable),
+    id: Type.string,
+    missing: Type.boolean,
     url: Type.string,
     label: Type.string,
     thumbnail: Type.string,
@@ -120,7 +121,8 @@ export function startServer() {
                             url: playlist?.sourceId,
                             labels: playlist == null ? [] : [...playlist.labels.entries()],
                             videos: (playlist?.videos ?? [...videoRegistry.videos.values()]).map(video => new VideoDisplay({
-                                id: video.file == null ? null : video.id,
+                                id: video.id,
+                                missing: video.file == null,
                                 url: video.getUrl(),
                                 label: video.label,
                                 channel: video.channel,
