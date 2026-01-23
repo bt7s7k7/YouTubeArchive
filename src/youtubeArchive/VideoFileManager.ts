@@ -39,7 +39,7 @@ export async function indexSourceDirectory(path: string) {
     for (const dirent of await readdir(path, { recursive: true, withFileTypes: true })) {
         if (!dirent.isFile()) continue
         const id = dirent.name.match(_ID_REGEXP)?.[1]
-        const fullPath = join(dirent.path ?? "", dirent.name)
+        const fullPath = join(dirent.path ?? dirent.parentPath, dirent.name)
         if (id == null) continue
 
         const file = ensureKey(files, id, () => ({ videoFile: null, infoFile: null, captionFiles: null }))

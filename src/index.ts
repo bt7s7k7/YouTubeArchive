@@ -286,6 +286,77 @@ void (async () => {
             },
         })
         .addOption({
+            name: "playlist insert", desc: "Adds a video to a playlist or changes its index; if the reference video is specified, the video is placed after the reference",
+            params: [
+                ["playlist", Type.number],
+                ["videoId", Type.string],
+                ["referenceId", Type.string.as(Type.nullable)],
+            ],
+            options: {
+                first: Type.boolean.as(Type.nullable),
+            },
+            async callback(playlistIndex, videoId, referenceId, { first }) {
+                if (referenceId != null && first) throw new UserError(`Cannot specify both "first" and "referenceId"`)
+
+                const project = useProject()
+                const playlistRegistry = await project.getPlaylistRegistry()
+                const playlist = await getPlaylistByIndex(playlistIndex)
+
+                const videoRegistry = await project.getVideoRegistry()
+                const video = videoRegistry.videos.get(videoId)
+
+                if (video == null) {
+                    throw new UserError("Video with the specified ID does not exist")
+                }
+
+                const referenceIndex = referenceId == null ? 0 : playlist.videos.findIndex(v => v.id == referenceId)
+                if (referenceIndex == -1) {
+                    throw new UserError("The specified reference video is not in the playlist")
+                }
+
+                const existingIndex = playlist.videos.findIndex(v => v.id == videoId)
+                if (existingIndex != -1) {
+                    playlistRegistry.removeVideoFromPlaylist(video, playlist)
+                }
+
+                if (first) {
+                    playlistRegistry.insertVideoToPlaylist(video, playlist, 0)
+                } else if (referenceId != null) {
+                    playlistRegistry.insertVideoToPlaylist(video, playlist, referenceIndex + 1)
+                } else {
+                    playlistRegistry.addVideoToPlaylist(video, playlist)
+                }
+
+                await playlistRegistry.save()
+            },
+        })
+        .addOption({
+            name: "playlist subtract", desc: "Removes a video from the playlist",
+            params: [
+                ["playlist", Type.number],
+                ["videoId", Type.string],
+            ],
+            async callback(playlistIndex, videoId) {
+                const project = useProject()
+                const playlistRegistry = await project.getPlaylistRegistry()
+                const playlist = await getPlaylistByIndex(playlistIndex)
+
+                const videoRegistry = await project.getVideoRegistry()
+                const video = videoRegistry.videos.get(videoId)
+
+                if (video == null) {
+                    throw new UserError("Video with the specified ID does not exist")
+                }
+
+                if (!playlistRegistry.removeVideoFromPlaylist(video, playlist)) {
+                    throw new UserError("The specified video is not in the playlist")
+                }
+
+                await playlistRegistry.save()
+
+            },
+        })
+        .addOption({
             name: "list", desc: "Prints videos in a playlist",
             params: [
                 ["index", Type.number],
@@ -1041,6 +1112,14 @@ void (async () => {
         return args
     }
 
+    async function autocompleteVideoId(command: Cli.Command, match: RegExpMatchArray, result: string[]) {
+        const prefix = match[1]
+        const idStart = match[2]
+        const videoRegistry = await useProject().getVideoRegistry()
+        const videos = [...videoRegistry.videos.keys()].filter(v => v.startsWith(idStart))
+        result.push(...videos.map(v => `${prefix}${v}`))
+    }
+
     const rl = createInterface({
         input: process.stdin,
         output: process.stdout,
@@ -1050,13 +1129,22 @@ void (async () => {
 
             const args = parseArgs(line)
             const match = repl.findCommand(args)
-            if (match && match[1].fullName.startsWith("video")) {
-                const idMatch = line.match(new RegExp(`^${match[1].fullName} ([\\w-]+)$`))
-                if (idMatch) {
-                    const idStart = idMatch[1]
-                    const videoRegistry = await useProject().getVideoRegistry()
-                    const videos = [...videoRegistry.videos.keys()].filter(v => v.startsWith(idStart))
-                    result.push(...videos.map(v => `${match[1].fullName} ${v}`))
+            if (match) {
+                const command = match[1]
+                if (command.fullName.startsWith("video")) {
+                    const idMatch = line.match(new RegExp(`^(${command.fullName} )([\\w-]+)$`))
+                    if (idMatch) autocompleteVideoId(command, idMatch, result)
+                } else if (command.fullName.startsWith("playlist insert")) {
+                    const referenceMatch = line.match(new RegExp(`^(${command.fullName} \\d+ [\\w-]+ )([\\w-]+)$`))
+                    if (referenceMatch) {
+                        autocompleteVideoId(command, referenceMatch, result)
+                    } else {
+                        const idMatch = line.match(new RegExp(`^(${command.fullName} \\d+ )([\\w-]+)$`))
+                        if (idMatch) autocompleteVideoId(command, idMatch, result)
+                    }
+                } else if (command.fullName.startsWith("playlist subtract")) {
+                    const idMatch = line.match(new RegExp(`^(${command.fullName} \\d+ )([\\w-]+)$`))
+                    if (idMatch) autocompleteVideoId(command, idMatch, result)
                 }
             }
 
