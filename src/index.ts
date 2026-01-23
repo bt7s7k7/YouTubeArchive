@@ -399,19 +399,33 @@ void (async () => {
 
                             print(`[${playlist.label}] New video: ${video.label}`)
 
-                            let index = -1
-                            for (let i = ids.length - 1; i >= 0; i--) {
-                                const prevId = ids[i]
-                                const video = videos.get(prevId) ?? unreachable()
-                                index = playlist.videos.indexOf(video)
-                                if (index != -1) break
+                            // If the playlist has labels, we want to add unsorted videos under the
+                            // "New" label. If the label does not exists we need to create it, but
+                            // if the playlist does not have labels at all, just add the video.
+
+                            const labels = [...playlist.labels.entries()]
+                            if (labels.length == 0) {
+                                playlistRegistry.addVideoToPlaylist(video, playlist)
+                                continue
                             }
 
-                            if (index == -1) {
-                                playlistRegistry.addVideoToPlaylist(video, playlist)
-                            } else {
-                                playlistRegistry.insertVideoToPlaylist(video, playlist, index + 1)
+                            const newIndex = labels.findIndex(([_, label]) => label == "New")
+                            if (newIndex == -1) {
+                                // Add the video and create the "New" label at its position
+                                const index = playlistRegistry.addVideoToPlaylist(video, playlist)
+                                playlist.labels.set(index, "New")
+                                continue
                             }
+
+                            const nextLabel = labels.at(newIndex + 1)
+                            if (nextLabel == null) {
+                                // The "New" label is last, just add the video to the end of the playlist
+                                playlistRegistry.addVideoToPlaylist(video, playlist)
+                                continue
+                            }
+
+                            // Insert the video before the next label's start (the end of the "New" label)
+                            playlistRegistry.insertVideoToPlaylist(video, playlist, nextLabel[0])
                         }
                     })
                 }

@@ -54,7 +54,7 @@ export class PlaylistRegistry {
     }
 
     public addVideoToPlaylist(video: VideoInfo, playlist: Playlist) {
-        this.insertVideoToPlaylist(video, playlist, playlist.videos.length)
+        return this.insertVideoToPlaylist(video, playlist, playlist.videos.length)
     }
 
     public insertVideoToPlaylist(video: VideoInfo, playlist: Playlist, index: number) {
@@ -75,6 +75,7 @@ export class PlaylistRegistry {
         }
 
         ensureKey(this._getVideoCache(), video.id, () => new Set()).add(playlist.id)
+        return index
     }
 
     public removeVideoFromPlaylist(video: VideoInfo, playlist: Playlist) {
