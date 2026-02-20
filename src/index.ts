@@ -738,8 +738,6 @@ void (async () => {
                 ["id", Type.string],
             ],
             async callback(id) {
-                if (!await areYouSure()) return
-
                 const project = useProject()
                 const videoRegistry = await project.getVideoRegistry()
                 const playlistRegistry = await project.getPlaylistRegistry()
@@ -749,10 +747,34 @@ void (async () => {
                     throw new UserError("Cannot find selected video")
                 }
 
+                if (!await areYouSure()) return
+
                 await deleteVideo(video)
 
                 await videoRegistry.save()
                 await playlistRegistry.save()
+            },
+        })
+        .addOption({
+            name: "video file delete", desc: "Deletes a video file, keeping the video metadata",
+            params: [
+                ["id", Type.string],
+            ],
+            async callback(id) {
+                const project = useProject()
+                const videoRegistry = await project.getVideoRegistry()
+                const videoFileManager = await project.getVideoFileManager()
+
+                const video = videoRegistry.videos.get(id)
+                if (video == null) {
+                    throw new UserError("Cannot find selected video")
+                }
+
+                if (!await areYouSure()) return
+
+                await videoFileManager.wipeVideoFiles(video)
+
+                await videoRegistry.save()
             },
         })
         .addOption({

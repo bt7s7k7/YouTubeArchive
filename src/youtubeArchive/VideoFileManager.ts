@@ -175,12 +175,16 @@ export class VideoFileManager {
     public async wipeVideoFiles(video: VideoInfo) {
         if (video.file) {
             await rm(join(this.path, video.file))
+
+            video.file = null
         }
 
         if (video.captions) {
             for (const captionFile of video.captions) {
                 await rm(join(this.path, captionFile))
             }
+
+            video.captions = null
         }
     }
 
