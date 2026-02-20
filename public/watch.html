@@ -33,13 +33,16 @@
         <h1>
             <a href="/">YouTube Archive</a>
         </h1>
-        <template for="$file in [encodeURIComponent(file)]">
+        <template for="$file in file == null ? [] : [encodeURIComponent(file)]">
             <video controls class="w-fill">
                 <source src="$file">
                 <template for="$caption in renderTracks()">
                     <track kind="captions" $caption />
                 </template>
             </video>
+        </template>
+        <template for="$_ in file == null ? [''] : []">
+            <h1 class="text-center text-danger bg-black-translucent py-7">Video file missing</h1>
         </template>
         <h1>
             <template for="$label in [label]">
