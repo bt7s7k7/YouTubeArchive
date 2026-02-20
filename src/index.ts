@@ -8,6 +8,7 @@ import { createInterface } from "node:readline/promises"
 import { inspect } from "node:util"
 import { Cli } from "./cli/Cli"
 import { GenericParser } from "./comTypes/GenericParser"
+import { Readwrite } from "./comTypes/types"
 import { arrayRemove, asyncConcurrency, makeRandomID, unreachable } from "./comTypes/util"
 import { startServer } from "./startServer"
 import { Type } from "./struct/Type"
@@ -1194,12 +1195,17 @@ void (async () => {
     await executeCommand("reload")
     const server = startServer()
 
+    rl.on("SIGINT", () => {
+        process.stdout.write("\n");
+        (rl as Readwrite<typeof rl>).line = ""
+        rl.prompt()
+    })
+
     rl.resume()
     rl.prompt()
     for await (let input of rl) {
-        rl.write("\x1b[0m")
+        process.stdout.write("\x1b[0m")
 
-        input = input.replace("\x1b[0m", "")
         await executeCommand(input)
 
         if (closed) break
