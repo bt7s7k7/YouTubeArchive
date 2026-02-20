@@ -62,6 +62,10 @@ When reading the playlist file, only the video ID is considered. The video label
     <index>: number, <url>: string
   playlist delete          - Deletes a playlist
     <index>: number
+  playlist insert          - Adds a video to a playlist or changes its index; if the reference video is specified, the video is placed after the reference
+    <playlist>: number, <videoId>: string, <referenceId>: string | null, --first: boolean | null
+  playlist subtract        - Removes a video from the playlist
+    <playlist>: number, <videoId>: string
   list                     - Prints videos in a playlist
     <index>: number
   orphans                  - List orphaned videos
@@ -79,6 +83,8 @@ When reading the playlist file, only the video ID is considered. The video label
   video                    - Displays video metadata
     <id>: string
   video delete             - Deletes a video
+    <id>: string
+  video file delete        - Deletes a video file, keeping the video metadata
     <id>: string
   video add                - Adds a new video
     <id>: string, --label: string | null, --description: string | null, --publishedAt: string | null, --channel: string | null, --channelId: string | null
