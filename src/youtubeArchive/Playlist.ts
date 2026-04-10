@@ -57,6 +57,26 @@ export class PlaylistRegistry {
         return this.insertVideoToPlaylist(video, playlist, playlist.videos.length)
     }
 
+    public insertVideoOrChangeIndexInPlaylist(video: VideoInfo, playlist: Playlist, anchor: { id: string } | "first" | "last") {
+        if (typeof anchor != "string" && !playlist.videos.find(v => v.id == anchor.id)) {
+            throw new UserError("The specified reference video is not in the playlist")
+        }
+
+        const existingIndex = playlist.videos.findIndex(v => v.id == video.id)
+        if (existingIndex != -1) {
+            this.removeVideoFromPlaylist(video, playlist)
+        }
+
+        if (anchor == "first") {
+            this.insertVideoToPlaylist(video, playlist, 0)
+        } else if (anchor == "last") {
+            this.addVideoToPlaylist(video, playlist)
+        } else {
+            const referenceIndex = typeof anchor == "string" ? 0 : playlist.videos.findIndex(v => v.id == anchor.id)
+            this.insertVideoToPlaylist(video, playlist, referenceIndex + 1)
+        }
+    }
+
     public insertVideoToPlaylist(video: VideoInfo, playlist: Playlist, index: number) {
         (playlist.videos as Readwrite<typeof playlist.videos>).splice(index, 0, video)
         const labels = [...playlist.labels.entries()]

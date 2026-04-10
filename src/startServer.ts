@@ -1,12 +1,13 @@
 import { serve } from "@hono/node-server"
+import { getConnInfo } from "@hono/node-server/conninfo"
 import { serveStatic } from "@hono/node-server/serve-static"
-import { Hono } from "hono"
+import { Context, Hono } from "hono"
 import { mimes } from "hono/utils/mime"
 import { readFileSync } from "node:fs"
 import { extname, join } from "node:path"
 import files from "virtual:server-files"
 import { Optional } from "./comTypes/Optional"
-import { fromBase64Binary, iteratorNth } from "./comTypes/util"
+import { fromBase64Binary, iteratorNth, unreachable } from "./comTypes/util"
 import { Struct } from "./struct/Struct"
 import { Type } from "./struct/Type"
 import { Playlist } from "./youtubeArchive/Playlist"
@@ -14,6 +15,7 @@ import { useProject } from "./youtubeArchive/state"
 // @ts-ignore
 import ta from "time-ago"
 import { DEFAULT_THUMBNAIL } from "./DEFAULT_THUMBNAIL"
+import { UserError } from "./youtubeArchive/UserError"
 import { VideoInfo } from "./youtubeArchive/VideoInfo"
 
 export class VideoDisplay extends Struct.define("VideoDisplay", {
@@ -48,6 +50,11 @@ export function startServer() {
 
     const app = new Hono()
 
+    function isLocal(c: Context) {
+        const info = getConnInfo(c)
+        return info.remote.address == "::1"
+    }
+
     files[""] = files["index.html"]
 
     app.get("/api/thumbnail/:id", async c => {
@@ -64,6 +71,97 @@ export function startServer() {
             return c.body(fromBase64Binary(DEFAULT_THUMBNAIL.slice(DEFAULT_THUMBNAIL.indexOf(",") + 1)), 404, {
                 "Content-Type": "image/png",
             })
+        }
+    })
+
+    function getPlaylistData(playlist: Playlist | undefined | null) {
+        const videoRegistry = project["_videoRegistry"] ?? unreachable()
+
+        return {
+            id: playlist?.id ?? null,
+            label: playlist?.label ?? "All Videos",
+            url: playlist?.sourceId,
+            labels: playlist == null ? [] : [...playlist.labels.entries()],
+            videos: (playlist?.videos ?? [...videoRegistry.videos.values()]).map(video => new VideoDisplay({
+                id: video.id,
+                missing: video.file == null,
+                url: video.getUrl(),
+                label: video.label,
+                channel: video.channel,
+                channelUrl: video.getChannelUrl(),
+                thumbnail: getThumbnailUrl(video),
+                captions: video.getCaptionsList(),
+                publishedAt: video.publishedAt,
+                publishedAgo: ta.ago(video.publishedAt),
+            })),
+        }
+    }
+
+    app.put("/api/playlist/:playlist/video/:id/at/:anchor", async c => {
+        if (!isLocal(c)) return c.text("Forbidden", 403)
+
+        try {
+            const playlistId = c.req.param("playlist")
+            const videoId = c.req.param("id")
+
+            const playlistRegistry = await project.getPlaylistRegistry()
+            const playlist = playlistRegistry.playlists.find(v => v.id == playlistId)
+
+            if (playlist == null) {
+                throw new UserError("Playlist with the specified ID does not exist")
+            }
+
+            const videoRegistry = await project.getVideoRegistry()
+            const video = videoRegistry.videos.get(videoId)
+
+            if (video == null) {
+                throw new UserError("Video with the specified ID does not exist")
+            }
+
+            const anchor = c.req.param("anchor")
+
+            playlistRegistry.insertVideoOrChangeIndexInPlaylist(video, playlist, anchor == "first" || anchor == "last" ? anchor : { id: anchor })
+
+            await playlistRegistry.save()
+
+            return c.json(getPlaylistData(playlist))
+        } catch (err) {
+            if (err instanceof UserError) return c.text(err.message, 400)
+            throw err
+        }
+    })
+
+    app.delete("/api/playlist/:playlist/video/:id", async c => {
+        if (!isLocal(c)) return c.text("Forbidden", 403)
+
+        try {
+            const playlistId = c.req.param("playlist")
+            const videoId = c.req.param("id")
+
+            const playlistRegistry = await project.getPlaylistRegistry()
+            const playlist = playlistRegistry.playlists.find(v => v.id == playlistId)
+
+            if (playlist == null) {
+                throw new UserError("Playlist with the specified ID does not exist")
+            }
+
+            const videoRegistry = await project.getVideoRegistry()
+            const video = videoRegistry.videos.get(videoId)
+
+            if (video == null) {
+                throw new UserError("Video with the specified ID does not exist")
+            }
+
+            if (!playlistRegistry.removeVideoFromPlaylist(video, playlist)) {
+                throw new UserError("The specified video is not in the playlist")
+            }
+
+            await playlistRegistry.save()
+
+            return c.json(getPlaylistData(playlist))
+        } catch (err) {
+            if (err instanceof UserError) return c.text(err.message, 400)
+            throw err
         }
     })
 
@@ -101,6 +199,7 @@ export function startServer() {
                 }
 
                 templatedContent = templatedContent
+                    .replace(/\$\$ADMIN\$\$/, () => isLocal(c) ? "true" : "false")
                     .replace(/\$\$LIST\$\$/, () => (
                         JSON.stringify([
                             new PlaylistDisplay({
@@ -116,23 +215,7 @@ export function startServer() {
                         ])
                     ))
                     .replace(/\$\$VIDEOS\$\$/, () => (
-                        JSON.stringify({
-                            label: playlist?.label ?? "All Videos",
-                            url: playlist?.sourceId,
-                            labels: playlist == null ? [] : [...playlist.labels.entries()],
-                            videos: (playlist?.videos ?? [...videoRegistry.videos.values()]).map(video => new VideoDisplay({
-                                id: video.id,
-                                missing: video.file == null,
-                                url: video.getUrl(),
-                                label: video.label,
-                                channel: video.channel,
-                                channelUrl: video.getChannelUrl(),
-                                thumbnail: getThumbnailUrl(video),
-                                captions: video.getCaptionsList(),
-                                publishedAt: video.publishedAt,
-                                publishedAgo: ta.ago(video.publishedAt),
-                            })),
-                        })
+                        JSON.stringify(getPlaylistData(playlist))
                     ))
                     .replace(/\$\$VIDEO\$\$/, () => (
                         JSON.stringify({

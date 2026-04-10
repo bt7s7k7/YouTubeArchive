@@ -310,23 +310,13 @@ void (async () => {
                     throw new UserError("Video with the specified ID does not exist")
                 }
 
-                const referenceIndex = referenceId == null ? 0 : playlist.videos.findIndex(v => v.id == referenceId)
-                if (referenceIndex == -1) {
-                    throw new UserError("The specified reference video is not in the playlist")
-                }
-
-                const existingIndex = playlist.videos.findIndex(v => v.id == videoId)
-                if (existingIndex != -1) {
-                    playlistRegistry.removeVideoFromPlaylist(video, playlist)
-                }
-
-                if (first) {
-                    playlistRegistry.insertVideoToPlaylist(video, playlist, 0)
-                } else if (referenceId != null) {
-                    playlistRegistry.insertVideoToPlaylist(video, playlist, referenceIndex + 1)
-                } else {
-                    playlistRegistry.addVideoToPlaylist(video, playlist)
-                }
+                playlistRegistry.insertVideoOrChangeIndexInPlaylist(video, playlist, referenceId != null ? (
+                    { id: referenceId }
+                ) : first ? (
+                    "first"
+                ) : (
+                    "last"
+                ))
 
                 await playlistRegistry.save()
             },

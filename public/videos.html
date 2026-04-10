@@ -35,21 +35,31 @@
             <div>$length videos</div>
         </template>
         <div class="flex column border-top mt-2" id="videos"></div>
+        <div class="hidden">
+            <div data-icon="mdiFileMoveOutline" id="icon-pick"></div>
+            <div data-icon="mdiVectorPointSelect" id="icon-insert"></div>
+            <div data-icon="mdiDelete" id="icon-delete"></div>
+        </div>
     </div>
 
     <script>
-        function init() {
-            const page = $$VIDEOS$$
+        let selectedVideo = localStorage.getItem("youtube-archive:selected-video") ?? null
 
+        let iconPick
+        let iconInsert
+        let iconDelete
+
+        function mount(page, /** @type {boolean} */canPick, /** @type {boolean} */canInsert, /** @type {boolean} */canDelete) {
             document.title = page.label + " - YouTube Archive"
 
             /** @type {string[]} */
             const videoListHtml = []
 
             const videosElement = document.getElementById("videos")
+            videosElement.innerHTML = ""
 
             /** @type {[number, string][]} */
-            const labels = page.labels
+            const labels = [...page.labels]
 
             let i = 0
             for (const video of page.videos) {
@@ -63,12 +73,13 @@
 
                 const anchor = document.createElement("a")
                 anchor.href = `/watch?v=${video.id}`
-                anchor.setAttribute("class", "as-button flat as-clickable text-left flex row border-bottom gap-2 p-2")
+                anchor.setAttribute("class", "as-button flat as-clickable text-left flex row border-bottom gap-2 p-2 hover-check")
+                if (selectedVideo == video.id) anchor.classList.add("bg-primary-translucent")
                 anchor.innerHTML =/*html*/`
                         <div class="w-200 flex center overflow-hidden" style="aspect-ratio: 1.8021265093;">
                             <img src="${video.thumbnail}" class="w-fill">
                         </div>
-                        <div class="flex column gap-2">
+                        <div class="flex flex-fill column gap-2">
                             <div class="flex-wrap">
                                 ${video.missing ? /*html*/`<div class="text-danger">(Missing)</div>` : ""}
                                 <b>${video.label}</b>
@@ -88,13 +99,96 @@
                                 <time datetime="${video.publishedAt}" title="${video.publishedAt}">${video.publishedAgo}</time>
                             </div>
                         </div>
+                        <div class="flex row center if-hover">
+                            ${canPick ? /*html*/`<button class="as-button flat as-clickable" data-video-action="pick" data-video="${video.id}"></button>` : ""}
+                            ${canPick && canDelete ? /*html*/`<button class="as-button flat as-clickable" ${!canInsert ? "disabled" : ""} data-video-action="insert" data-video="${video.id}"></button>` : ""}
+                            ${canDelete ? /*html*/`<button class="as-button flat as-clickable" data-video-action="delete" data-video="${video.id}"></button>` : ""}
+                        </div>
                 `
 
                 videosElement.append(anchor)
             }
 
+            for (const button_1 of videosElement.querySelectorAll("[data-video-action]")) {
+                const button = /** @type {HTMLElement} */(button_1)
+                const action = button.dataset.videoAction
+                const id = button.dataset.video
 
-            startApp({ ...page })
+                if (action == "pick") {
+                    button.prepend((iconPick ??= document.querySelector("#icon-pick > *")).cloneNode(true))
+                } else if (action == "insert") {
+                    button.prepend((iconInsert ??= document.querySelector("#icon-insert > *")).cloneNode(true))
+                } else if (action == "delete") {
+                    button.prepend((iconDelete ??= document.querySelector("#icon-delete > *")).cloneNode(true))
+                }
+
+                button.addEventListener("click", (event) => {
+                    event.stopPropagation()
+                    event.preventDefault()
+
+                    if (action == "pick") {
+                        if (selectedVideo == id) {
+                            selectedVideo = null
+                            localStorage.removeItem("youtube-archive:selected-video")
+                            remount()
+                        } else {
+                            selectedVideo = id
+                            localStorage.setItem("youtube-archive:selected-video", id)
+                            remount()
+                        }
+                    } else if (action == "insert") {
+                        (async () => {
+                            const newPage = await fetch(`/api/playlist/${page.id}/video/${selectedVideo}/at/${id}`, { method: "PUT" }).then(v => v.json())
+                            setPage(newPage)
+                            selectedVideo = null
+                            localStorage.removeItem("youtube-archive:selected-video")
+                            remount()
+                        })()
+                    } else if (action == "delete") {
+                        (async () => {
+                            const newPage = await fetch(`/api/playlist/${page.id}/video/${id}`, { method: "DELETE" }).then(v => v.json())
+                            setPage(newPage)
+                            remount()
+                        })()
+                    }
+                })
+            }
+
+        }
+
+        function init() {
+            let page = $$VIDEOS$$
+            const isAdmin = /** @type {boolean} */($$ADMIN$$)
+
+            setInterval(() => {
+                const newSelectedVideo = localStorage.getItem("youtube-archive:selected-video") ?? null
+                if (newSelectedVideo != selectedVideo) {
+                    selectedVideo = newSelectedVideo
+                    remount()
+                }
+            }, 250)
+
+            function remount() {
+                let canPick = isAdmin
+                let canInsert = isAdmin && page.id != null && selectedVideo != null
+                let canDelete = isAdmin && page.id != null
+
+                mount(page, canPick, canInsert, canDelete)
+            }
+
+            function setPage(newPage) {
+                page = newPage
+            }
+
+            startApp({
+                ...page, remount, setPage,
+                mdiFileMoveOutline: "M14 2H6C4.9 2 4 2.9 4 4V20C4 20.41 4.12 20.8 4.34 21.12C4.41 21.23 4.5 21.33 4.59 21.41C4.95 21.78 5.45 22 6 22H13.53C13 21.42 12.61 20.75 12.35 20H6V4H13V9H18V12C18.7 12 19.37 12.12 20 12.34V8L14 2M18 23L23 18.5L20 15.8L18 14V17H14V20H18V23Z",
+                mdiVectorPointSelect: "M12,20L7,22L12,11L17,22L12,20M8,2H16V5H22V7H16V10H8V7H2V5H8V2M10,4V8H14V4H10Z"
+            })
+
+            setTimeout(() => {
+                remount()
+            })
         }
     </script>
 </body>
