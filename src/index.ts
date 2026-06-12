@@ -123,7 +123,7 @@ void (async () => {
     }
 
     async function areYouSure() {
-        if ((await rl.question("Are you sure? [y/n]")) != "y\x1b[0m") {
+        if ((await rl.question("Are you sure? [y/n]")).startsWith("y\x1b[0m")) {
             printWarn("Operation aborted")
             return false
         }
