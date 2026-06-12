@@ -110,6 +110,21 @@
                     // Prevent scrolling
                     event.preventDefault()
                 }
+
+                if (event.code == "KeyC") {
+                    const video = document.querySelector("video")
+
+                    const tracks = [...video.textTracks]
+                    if (tracks.length == 0) return
+
+                    const selected = tracks.find(v => v.mode == "showing")
+                    if (selected == null) {
+                        const defaultTracks = tracks.find(v => v.language == "en");
+                        (defaultTracks ?? tracks[0]).mode = "showing"
+                    } else {
+                        selected.mode = "disabled"
+                    }
+                }
             })
 
             document.title = video.label + " - YouTube Archive"
