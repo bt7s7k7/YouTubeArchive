@@ -1,5 +1,5 @@
 import axios from "axios"
-import { printInfo } from "./print"
+import { printInfo, printWarn } from "./print"
 
 const _API_BASE_URL = "https://www.googleapis.com/youtube/v3"
 
@@ -103,12 +103,16 @@ export interface VideoListResponse {
 export async function getPlaylistVideos(playlist: string, playlistId: string, apiKey: string) {
     const videos: VideoData[] = []
 
-    let index = 1
     let nextPageToken: string | null | undefined = null
     do {
-        printInfo(`[${playlist}] Downloading first ${index++ * 50} videos...`)
+        printInfo(`[${playlist}] Downloading first ${videos.length + 50} videos...`)
         const url: string = `${_API_BASE_URL}/playlistItems?part=snippet,contentDetails&playlistId=${playlistId}&maxResults=50&key=${apiKey}${nextPageToken != null ? `&pageToken=${nextPageToken}` : ""}`
         const response = await axios.get<PlaylistItemsResponse>(url)
+
+        if (response.data.items.length == 0) {
+            printWarn(`[${playlist}] Paged API returned zero videos after ${videos.length} videos, giving up`)
+            break
+        }
 
         videos.push(...response.data.items)
 
