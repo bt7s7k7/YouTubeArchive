@@ -509,10 +509,13 @@ void (async () => {
                 const videoFileManager = await project.getVideoFileManager()
 
                 let path: string | null = null
+                let finished = 0
+                let total = 0
                 const concurrency = asyncConcurrency(10)
 
                 for (const video of videoRegistry.videos.values()) {
                     if (video.file != null) continue
+                    total++
 
                     concurrency.push(async () => {
                         path ??= getTempFolder()
@@ -531,7 +534,8 @@ void (async () => {
                             return
                         }
 
-                        print(`Finished "${video.label}"`)
+                        finished++
+                        print(`(${finished}/${total}) Finished "${video.label}"`)
                         await videoFileManager.importVideoFile(video, videoFile)
 
                         if (files!.captionFiles != null) {
