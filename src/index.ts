@@ -142,13 +142,15 @@ void (async () => {
     function downloadVideo(video: VideoInfo, path: string, { useCookies = false, subsOnly = false } = {}) {
         if (useCookies && subsOnly) unreachable()
 
+        const formatSpecifier = `--format "bestvideo[height<=1080]+bestaudio"`
+
         const command = useCookies ? (
-            `yt-dlp --cookies-from-browser chrome "${video.getUrl()}"`
+            `yt-dlp --cookies-from-browser chrome ${formatSpecifier} "${video.getUrl()}"`
         ) : (
             subsOnly ? (
                 `yt-dlp --write-subs --sub-langs ".*" --skip-download "${video.getUrl()}"`
             ) : (
-                `yt-dlp --write-subs --sub-langs ".*" "${video.getUrl()}"`
+                `yt-dlp --write-subs --sub-langs ".*" ${formatSpecifier} "${video.getUrl()}"`
             )
         )
 
