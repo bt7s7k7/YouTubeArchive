@@ -13,6 +13,7 @@ export class VideoInfo extends Struct.define("VideoInfo", {
     captions: Type.string.as(Type.array).as(Type.nullable),
     publishedAt: Type.string,
     thumbnail: Type.string.as(Type.nullable),
+    duration: Type.string.as(Type.nullable),
     description: Type.string,
 }) {
     public getCaptionsList() {

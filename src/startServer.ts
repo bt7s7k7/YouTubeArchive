@@ -29,6 +29,7 @@ export class VideoDisplay extends Struct.define("VideoDisplay", {
     channelUrl: Type.string.as(Type.nullable),
     publishedAt: Type.string,
     publishedAgo: Type.string,
+    duration: Type.string.as(Type.nullable),
 }) { }
 
 export class PlaylistDisplay extends Struct.define("PlaylistDisplay", {
@@ -57,7 +58,7 @@ export function startServer() {
 
     files[""] = files["index.html"]
 
-    app.get("/api/thumbnail/:id", async c => {
+    app.get("/api/video/:id/thumbnail", async c => {
         const id = c.req.param("id")
         const videoRegistry = await project.getVideoRegistry()
         const video = videoRegistry.videos.get(id)
@@ -72,6 +73,19 @@ export function startServer() {
                 "Content-Type": "image/png",
             })
         }
+    })
+
+    app.get("/api/video/:id/metadata", async c => {
+        const id = c.req.param("id")
+        const videoRegistry = await project.getVideoRegistry()
+        const videoFileManager = await project.getVideoFileManager()
+        const video = videoRegistry.videos.get(id)
+        if (video == null) return c.notFound()
+
+        const metadata = await videoFileManager.getVideoFileMetadata(video)
+        if (metadata == null) return c.notFound()
+
+        return c.json(metadata)
     })
 
     function getPlaylistData(playlist: Playlist | undefined | null) {
@@ -93,6 +107,7 @@ export function startServer() {
                 captions: video.getCaptionsList(),
                 publishedAt: video.publishedAt,
                 publishedAgo: ta.ago(video.publishedAt),
+                duration: video.duration,
             })),
         }
     }
@@ -167,9 +182,9 @@ export function startServer() {
 
     function getThumbnailUrl(video: VideoInfo | null | undefined) {
         if (video?.thumbnail) {
-            return `/api/thumbnail/${video.id}`
+            return `/api/video/${video.id}/thumbnail`
         } else {
-            return `/api/thumbnail/invalid`
+            return `/api/video/invalid/thumbnail`
         }
     }
 

@@ -775,6 +775,46 @@ void (async () => {
             },
         })
         .addOption({
+            name: "video file refresh", desc: "Updates cached video file metadata",
+            async callback() {
+                const project = useProject()
+                const videoRegistry = await project.getVideoRegistry()
+                const videoFileManager = await project.getVideoFileManager()
+
+                const concurrency = asyncConcurrency(20)
+
+                let pending = 0
+                let finished = 0
+                const interval = setInterval(() => {
+                    print(`Processing (${finished}/${pending})...`)
+                }, 500)
+
+                using d = new DisposableStack()
+                d.defer(() => clearInterval(interval))
+
+                for (const video of videoRegistry.videos.values()) {
+                    if (video.file == null) continue
+                    pending++
+                    concurrency.push(async () => {
+                        const metadata = await videoFileManager.getVideoFileMetadata(video)
+                        finished++
+                        if (metadata == null) {
+                            printWarn(`Failed to get metadata for video "${video.id}"`)
+                            return
+                        }
+                        video.duration = metadata.duration
+                    })
+                }
+
+                await concurrency.join()
+                d.dispose()
+
+                printInfo("Finished")
+
+                await videoRegistry.save()
+            },
+        })
+        .addOption({
             name: "video add", desc: "Adds a new video",
             params: [
                 ["id", Type.string],
@@ -879,6 +919,7 @@ void (async () => {
             async callback(id) {
                 const project = useProject()
                 const videoRegistry = await project.getVideoRegistry()
+                const videoFileManager = await project.getVideoFileManager()
 
                 const video = videoRegistry.videos.get(id)
                 if (video == null) {
@@ -892,8 +933,13 @@ void (async () => {
                 print(
                     `\x1b[96mLabel:\x1b[0m ${label}\n` +
                     `\x1b[96mDescription:\x1b[0m\n\x1b[2m${description}\x1b[0m\n` +
-                    `\x1b[96mMetadata:\x1b[0m ${inspect(other, undefined, undefined, true)}\n`,
+                    `\x1b[96mMetadata:\x1b[0m${inspect(other, undefined, undefined, true).slice(1, -1)}`,
                 )
+
+                const metadata = await videoFileManager.getVideoFileMetadata(video)
+                if (metadata != null) {
+                    print(`\x1b[96mVideo file:\x1b[0m${inspect(metadata, undefined, undefined, true).slice(1, -1)}`)
+                }
             },
         })
         .addOption({

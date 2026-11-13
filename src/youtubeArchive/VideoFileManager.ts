@@ -1,6 +1,8 @@
 import axios, { AxiosError } from "axios"
+import { exec } from "child_process"
 import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import { extname, join, relative } from "node:path"
+import prettyBytes from "pretty-bytes"
 import { ensureKey } from "../comTypes/util"
 import { UserError } from "./UserError"
 import { VideoInfo } from "./VideoInfo"
@@ -148,6 +150,31 @@ export function getCaptionsExt(captionsFile: string) {
     return ext
 }
 
+interface _FFProbeOutput {
+    streams: _FFProbeStream[]
+    format: {
+        size: string
+        duration: string
+    }
+}
+
+interface _FFProbeStream {
+    codec_name: string
+    codec_type: "video" | "audio"
+    width: number
+    height: number
+    r_frame_rate: string
+}
+
+export interface VideoFileMetadata {
+    codec: string
+    width: number
+    height: number
+    fps: number
+    size: string
+    duration: string
+}
+
 export class VideoFileManager {
     public async importVideoFile(video: VideoInfo, file: string) {
         const resultName = _getFilenameForVideo(video, extname(file))
@@ -156,6 +183,10 @@ export class VideoFileManager {
         await cp(file, fullPath)
 
         video.file = relative(this.path, fullPath)
+        const metadata = await this.getVideoFileMetadata(video)
+        if (metadata) {
+            video.duration = metadata.duration
+        }
     }
 
     public async importCaptionsFile(video: VideoInfo, captionsFile: string) {
@@ -170,6 +201,50 @@ export class VideoFileManager {
         const fullPath = join(this.path, _getFilenameForVideo(video, `.${language}.vtt`))
         await writeFile(fullPath, captionsFileContent)
         void (video.captions ??= []).push(relative(this.path, fullPath))
+    }
+
+    public async getVideoFileMetadata(video: VideoInfo) {
+        if (video.file == null) return null
+
+        const metadata = await new Promise<_FFProbeOutput | null>((resolve, reject) => exec(`ffprobe -v quiet -print_format json -show_streams -show_format "./${video.file}"`, { cwd: this.path }, (error, stdout, stderr) => {
+            if (error) {
+                reject(error)
+                return
+            }
+
+            try {
+                resolve(JSON.parse(stdout))
+            } catch (err) {
+                resolve(null)
+            }
+        }))
+
+        if (metadata == null) return null
+
+        const videoStream = metadata.streams.find(v => v.codec_type == "video")
+        if (videoStream == null) return null
+
+        const { codec_name, width, height, r_frame_rate } = videoStream
+        const [fpsA, fpsB] = r_frame_rate.split("/")
+        const fps = +fpsA / +fpsB
+        const size = prettyBytes(+metadata.format.size)
+
+        let duration = +metadata.format.duration
+        let durationFormatted = ""
+        if (duration > 3600) {
+            durationFormatted += (duration / 3600 | 0) + ":"
+            duration = duration % 3600
+        }
+
+        durationFormatted += (((duration / 60) | 0) + ":").padStart(3, "0")
+        duration = duration % 60
+
+        durationFormatted += (duration | 0).toString().padStart(2, "0")
+
+        return {
+            width, height, fps, size,
+            codec: codec_name, duration: durationFormatted
+        } as VideoFileMetadata
     }
 
     public async wipeVideoFiles(video: VideoInfo) {

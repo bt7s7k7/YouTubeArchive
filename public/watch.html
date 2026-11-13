@@ -70,8 +70,9 @@
             </template>
         </div>
         <template for="$desc in [escapeHTML(description)]">
-            <article class="pre-wrap border rounded p-2 my-4">$desc</article>
+            <article class="pre-wrap border rounded p-2 mt-4">$desc</article>
         </template>
+        <div class="muted small" id="metadata"></div>
     </div>
 
     <script>
@@ -141,6 +142,10 @@
 
             window.addEventListener("mouseleave", () => {
                 document.activeElement?.blur()
+            })
+
+            fetch(`/api/video/${video.id}/metadata`).then(v => v.json()).then(({ size, width, height, fps, codec }) => {
+                document.getElementById("metadata").append(document.createTextNode(`${size} ${width}x${height}@${fps} ${codec}`))
             })
         }
     </script>

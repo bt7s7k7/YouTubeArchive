@@ -98,6 +98,9 @@
                             <div class="small muted">
                                 <time datetime="${video.publishedAt}" title="${video.publishedAt}">${video.publishedAgo}</time>
                             </div>
+                            <div class="flex row">
+                                <div class="px-1 small bg-black-transparent rounded">${video.duration ?? ""}</div>
+                            </div>
                         </div>
                         <div class="flex row center if-hover">
                             ${canPick ? /*html*/`<button class="as-button flat as-clickable" data-video-action="pick" data-video="${video.id}"></button>` : ""}
